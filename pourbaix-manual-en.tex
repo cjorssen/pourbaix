@@ -1,0 +1,2212 @@
+
+\documentclass[11pt,a4paper]{article}
+\usepackage{fontspec}
+\usepackage{geometry}
+\geometry{margin=2.2cm}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{pdflscape}
+\usepackage{listings}
+\usepackage{multicol}
+\usepackage{hyperref}
+\usepackage[english]{babel}
+\usepackage{pourbaix}
+\pgfplotsset{compat=1.18}
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black,citecolor=blue!55!black}
+
+\lstdefinestyle{pbx}{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{black!20},
+  backgroundcolor=\color{black!2}
+}
+\lstset{style=pbx}
+\emergencystretch=3em
+
+\newcommand{\pkg}[1]{\textsf{#1}}
+\newcommand{\macro}[1]{\texttt{\textbackslash #1}}
+\newcommand{\key}[1]{\texttt{#1}}
+\newcommand{\val}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\pH}{\mathrm{pH}}
+\newcommand{\SRT}{\frac{RT\ln 10}{F}}
+\setlist[itemize]{topsep=2pt,itemsep=2pt,parsep=0pt}
+\setlist[enumerate]{topsep=2pt,itemsep=2pt,parsep=0pt}
+
+\newcommand{\ExampleDiagram}[2]{%
+\begin{figure}[H]\centering
+\begin{tikzpicture}
+\begin{axis}[pourbaix axis,width=.78\linewidth,height=6cm,ymin=-1.2,ymax=2]
+#2
+\end{axis}
+\end{tikzpicture}
+\caption{#1}
+\end{figure}}
+
+\newcommand{\GalleryDiagram}[2]{%
+  \begin{minipage}[t]{0.47\linewidth}\centering
+  \textbf{#2 (#1)}\par\smallskip
+  \begin{tikzpicture}
+  \begin{axis}[pourbaix axis,width=\linewidth,height=4.4cm,xtick={0,7,14},ytick={-1,0,1,2},ticklabel style={font=\scriptsize},xlabel={\scriptsize pH},ylabel={\scriptsize $E$/V}]
+    \addPourbaix[element=#1,c=1e-2,color=blue,domain labels=formula,labels=true,frontier labels=false,water=false,label nx=48,label ny=48];
+  \end{axis}
+  \end{tikzpicture}
+  \end{minipage}}
+
+\begin{document}
+\title{\pkg{pourbaix} v1.0\\User and Expert Manual}
+\author{Technical documentation}
+\date{2026-05-10}
+\maketitle
+
+\begin{abstract}
+\pkg{pourbaix} draws potential-pH diagrams with LuaLaTeX and pgfplots. Lua performs the thermodynamic construction, while pgfplots draws straight boundaries, labels, optional water lines, and optional extra ticks. This v1.0 manual is the English reference documentation for the first public release. It contains a user part, with a detailed description of \macro{addPourbaix} and all public key--value options, and an expert part, with the data model, the algorithms, and the Lua function reference.
+\end{abstract}
+
+\paragraph{Development note and disclaimer.} This package was ``vibe-coded'' by Christophe Jorssen\linebreak(\href{mailto:christophe.jorssen@gmail.com}{\nolinkurl{christophe.jorssen@gmail.com}}) with the assistance of ChatGPT 5.5. Users remain responsible for checking thermodynamic data, concentration conventions, and generated diagrams before scientific or pedagogical use. The code is distributed under the LaTeX Project Public License, version 1.3c or later. The work has maintenance status ``maintained'' and the Current Maintainer is Christophe Jorssen.
+
+\tableofcontents
+\clearpage
+
+\part{User manual}
+
+\section{Installation and compilation}
+Place the three core files
+\begin{itemize}
+\item \file{pourbaix.sty},
+\item \file{pourbaix.lua},
+\item \file{pourbaix-data.lua}
+\end{itemize}
+in the working directory or in a directory visible to TeX. Compile with \textbf{LuaLaTeX}. The package loads \pkg{pgfplots}, \pkg{pgfkeys}, and \pkg{mhchem}.
+
+\begin{lstlisting}
+\documentclass[tikz,border=6pt]{standalone}
+\usepackage{pourbaix}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[pourbaix axis,ymin=-1.2,ymax=2]
+  \addPourbaix[element=Fe,c=1e-2,color=blue];
+\end{axis}
+\end{tikzpicture}
+\end{document}
+\end{lstlisting}
+
+\section{The main macro: \macro{addPourbaix}}
+\macro{addPourbaix} is the central command. It must be used inside a pgfplots \texttt{axis}. It computes one diagram and emits the corresponding \macro{addplot} commands.
+
+\begin{lstlisting}
+\begin{axis}[pourbaix axis,ymin=-1.2,ymax=2]
+  \addPourbaix[element=Fe,c=1e-2,color=blue];
+\end{axis}
+\end{lstlisting}
+
+The command is intentionally simple: use pgfplots to control the axis geometry and use \macro{addPourbaix} keys to control the thermodynamic diagram.
+
+\subsection{Basic examples}
+\ExampleDiagram{Iron at $c=10^{-2}\,\mathrm{mol\,L^{-1}}$.}{\addPourbaix[element=Fe,c=1e-2,color=blue];}
+
+\begin{lstlisting}
+\addPourbaix[element=Fe,c=1e-2,color=blue]
+\end{lstlisting}
+
+\ExampleDiagram{Superposition of two built-in elements.}{%
+  \addPourbaix[name=Fe,element=Fe,c=1e-2,color=blue];
+  \addPourbaix[name=Cu,element=Cu,c=1e-3,color=red,domain label style={pourbaix label,text=red}];}
+
+\begin{lstlisting}
+\addPourbaix[name=Fe,element=Fe,c=1e-2,color=blue]
+\addPourbaix[name=Cu,element=Cu,c=1e-3,color=red,
+  domain label style={pourbaix label,text=red}]
+\end{lstlisting}
+
+
+\subsection{Complete key reference for \macro{addPourbaix}}
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.18}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.23\linewidth}>{\raggedright\arraybackslash}p{0.15\linewidth}>{\raggedright\arraybackslash}p{0.53\linewidth}@{}}
+\toprule
+\textbf{Key} & \textbf{Default} & \textbf{Effect and typical value}\\
+\midrule\endhead
+\key{element} & \val{Fe} & Element symbol, e.g. \val{Cu}. The element must be built in or declared by the user.\\
+\key{c} & \val{1e-2} & Trace concentration, e.g. \val{1e-4}. Its thermodynamic meaning is set by \key{c convention}.\\
+\key{c convention} & \val{species} & Meaning of \key{c}: \val{species}, \val{element species equal}, or \val{element element equal}.\\
+\key{color} & \val{black} & Main drawing color, e.g. \val{blue} or \val{red}.\\
+\key{species} & \val{all} & Active species identifiers, e.g. \val{{Fe,Fe2+,Fe(OH)2}}.\\
+\key{pHmin}, \key{pHmax} & \val{0}, \val{14} & Computational pH interval, e.g. \val{pHmax=5}. Usually match the axis limits.\\
+\key{Emin}, \key{Emax} & \val{auto} & Computational potential interval, e.g. \val{Emin=-1.2,Emax=2}.\\
+\key{dpH} & \val{0.02} & pH scan step before bisection and clipping, e.g. \val{0.005}.\\
+\key{labels} & \val{true} & Master switch for domain labels. Use \val{false} to suppress them.\\
+\key{domain labels} & \val{formula} & Domain label mode: \val{none}, \val{formula}, \val{letters}, or \val{selected}.\\
+\key{selected domains} & empty & Species shown with formulas in \val{selected} mode, e.g. \val{{Fe,Fe^2+,Fe(OH)2}}.\\
+\key{domain label phase} & \val{neutral} & Phase policy for formula labels: \val{neutral}, \val{all}, or \val{none}. Neutral species such as \ce{Fe(s)}, \ce{Fe(OH)2(s)}, or \ce{H2S(aq)} show their phase by default; ions do not. Alias: \key{label phase}.\\
+\key{selected domain phase} & empty & Optional override for selected formula labels in \val{selected} mode. If unset, \key{domain label phase} is used. Letter labels never show phases.\\
+\key{label nx}, \key{label ny} & \val{64}, \val{64} & Sampling grid used for label placement, e.g. \val{96}.\\
+\key{domain label style} & \val{pourbaix label} & TikZ style for domain labels; alias: \key{label style}.\\
+\key{frontier labels} & \val{false} & Draw automatic boundary identifiers.\\
+\key{frontier label style} & \val{pourbaix frontier label} & TikZ node style for boundary labels.\\
+\key{frontier redox labels} & \val{true} & Enable numeric labels on non-vertical boundaries.\\
+\key{frontier vertical labels} & \val{true} & Enable lowercase labels on vertical boundaries.\\
+\key{extra x ticks} & \val{false} & Add exact pH values of vertical boundaries as extra x ticks.\\
+\key{extra y ticks} & \val{false} & Add exact E values of horizontal redox boundaries as extra y ticks.\\
+\key{tick sig figs} & \val{4} & Significant figures used in extra tick labels.\\
+\key{extra x tick style}, \key{extra y tick style} & empty & Optional tick-label styles passed to pgfplots for exact boundary ticks, e.g. \val{rotate=90,anchor=east,font=\scriptsize,text=red}.\\
+\key{name} & empty & Explicit identifier for later numerical queries; alias for internal \key{id}.\\
+\key{line width} & \val{0.6pt} & Line width used by generated \macro{addplot} commands.\\
+\key{forget plot} & \val{true} & Add \val{forget plot} so generated curves do not enter legends.\\
+\key{bbox} & \val{true} & Clip generated boundaries to the computational box.\\
+\key{water} & \val{false} & Draw water stability lines.\\
+\key{water preset} & \val{aere} & Preset for water lines, e.g. \val{standard}.\\
+\key{water style} & gray dashed & pgfplots style applied to water lines.\\
+\key{water labels} & \val{false} & Add labels for oxidant/reductant species near the water stability lines.\\
+\key{water label style} & \val{font=\scriptsize,...} & TikZ node style for water labels.\\
+\key{water label offset} & \val{0.10} & Vertical offset, in volts. Oxidants are placed above the line and reductants below it.\\
+\key{water label pH low}, \key{water label pH high} & auto & Optional pH coordinates for the low-pH and high-pH water-label pairs.\\
+\key{water lower oxidant label}, \key{water lower reductant label} & \val{H+}, \val{H2(aq)} & Formula contents used near the hydrogen line. These are mhchem contents; do not wrap them in \macro{ce}.\\
+\key{water upper oxidant label}, \key{water upper reductant label} & \val{O2(aq)}, \val{H2O} & Formula contents used near the oxygen line; for example, use \val{O2(g)} or \val{HO-} when desired.\\
+\bottomrule
+\end{longtable}
+\endgroup
+
+The next section gives copyable examples for the most visible keys. The declaration macros have their own reference section below.
+
+\section{Small examples for key groups}
+\subsection{Axis ranges and computational ranges}
+The pgfplots axis controls what is displayed. The \key{pHmin}, \key{pHmax}, \key{Emin}, and \key{Emax} keys control what the Lua engine computes. In most documents these should be consistent.
+
+\begin{lstlisting}
+\begin{axis}[pourbaix axis,xmin=0,xmax=5,ymin=-1.0,ymax=1.5]
+  \addPourbaix[element=V,c=1e-2,pHmin=0,pHmax=5,Emin=-1,Emax=1.5]
+\end{axis}
+\end{lstlisting}
+
+\subsection{Color, line width, and styles}
+\ExampleDiagram{Changing drawing style.}{\addPourbaix[element=Fe,c=1e-2,color=blue,line width=1.0pt,domain label style={pourbaix label,fill=blue!5,text=blue!60!black}];}
+
+\begin{lstlisting}
+\addPourbaix[element=Fe,c=1e-2,color=blue,line width=1pt,
+  domain label style={pourbaix label,fill=blue!5,text=blue!60!black}]
+\end{lstlisting}
+
+\subsection{Domain label modes}
+\begin{lstlisting}
+% No domain label
+\addPourbaix[element=Fe,c=1e-2,domain labels=none]
+
+% Chemical formulas, using mhchem internally.
+% By default, neutral species show their physical state.
+\addPourbaix[element=Fe,c=1e-2,domain labels=formula]
+
+% Formula labels, with every physical state shown.
+\addPourbaix[element=Fe,c=1e-2,domain labels=formula,
+  domain label phase=all]
+
+% Formula labels, with no physical state shown.
+\addPourbaix[element=Fe,c=1e-2,domain labels=formula,
+  domain label phase=none]
+
+% Letters A, B, C... sorted left to right and top to bottom
+\addPourbaix[element=Fe,c=1e-2,domain labels=letters]
+
+% Selected formulas; all other domains get letters.
+% Letter labels never show physical states.
+\addPourbaix[element=Fe,c=1e-2,domain labels=selected,
+  selected domains={Fe,Fe^2+,Fe(OH)2}]
+\end{lstlisting}
+
+The phase policy applies only to labels that are formulas. The default is \key{domain label phase=neutral}: neutral species are printed as, for example, \ce{Fe(s)}, \ce{Fe(OH)2(s)}, or \ce{H2S(aq)}, whereas charged species such as \ce{Fe^{2+}} or \ce{SO4^{2-}} are printed without a phase tag. Use \key{domain label phase=all} to show phases for all formula labels, and \key{domain label phase=none} to suppress them. In \key{domain labels=selected} mode, non-selected domains are letters and therefore never carry physical states.
+
+\ExampleDiagram{Mixed selected domain labels.}{\addPourbaix[element=Fe,c=1e-2,color=blue,domain labels=selected,selected domains={Fe,Fe^2+,Fe(OH)2},frontier labels=true];}
+
+\subsection{Frontier labels}
+The package numbers non-vertical boundaries and uses lowercase letters for vertical ones. The labels are implemented as nodes appended to generated \macro{addplot} commands.
+
+\ExampleDiagram{Automatic boundary identifiers.}{\addPourbaix[element=Fe,c=1e-2,color=blue,frontier labels=true,domain labels=formula];}
+
+\begin{lstlisting}
+\addPourbaix[element=Fe,c=1e-2,frontier labels=true,
+  frontier label style={pourbaix frontier label,fill=white,text=blue}]
+\end{lstlisting}
+
+\subsection{Extra ticks}
+\key{extra x ticks} prints the exact pH values of vertical boundaries. \key{extra y ticks} prints the exact E values of horizontal redox boundaries. These are pgfplots extra ticks. If several labels are close to regular ticks or to each other, they may overlap. In that case, use \key{extra x tick style} and \key{extra y tick style}. The next example deliberately uses color so that the effect is immediately visible.
+
+\begin{lstlisting}
+\addPourbaix[
+  element=Fe,c=1e-2,color=blue,
+  frontier labels=true,
+  extra x ticks=true,
+  extra y ticks=true,
+  tick sig figs=3,
+  extra x tick style={rotate=90,anchor=east,
+    font=\scriptsize,text=red},
+  extra y tick style={font=\scriptsize,fill=yellow!20,
+    inner sep=1pt,text=red}]
+\end{lstlisting}
+
+\ExampleDiagram{Extra ticks with visible custom styles.}{\addPourbaix[element=Fe,c=1e-2,color=blue,frontier labels=true,extra x ticks=true,extra y ticks=true,tick sig figs=3,extra x tick style={rotate=90,anchor=east,font=\scriptsize,text=red},extra y tick style={font=\scriptsize,fill=yellow!20,inner sep=1pt,text=red}];}
+
+\subsection{Water stability lines}
+\begin{lstlisting}
+\addPourbaix[element=Fe,c=1e-2,water=true]
+\addPourbaix[element=Fe,c=1e-2,water=true,water preset=standard,
+  water style={draw=black!50,densely dashed,line width=.5pt,mark=none}]
+\end{lstlisting}
+
+\ExampleDiagram{Water lines.}{\addPourbaix[element=Fe,c=1e-2,color=blue,water=true,domain labels=formula];}
+
+Water labels are treated as an exception to the domain-label system. They are not found by sampling stable domains. Instead, they are placed close to the water boundaries themselves. Oxidant labels are placed above the corresponding line and reductant labels below it. The label keys take raw mhchem contents: write \val{O2(g)}, not \verb|\ce{O2(g)}|.
+
+\begin{lstlisting}
+\addPourbaix[
+  element=Fe,c=1e-2,water=true,water labels=true,
+  water label style={font=\scriptsize,fill=white,inner sep=1pt},
+  water label offset=0.12,
+  water lower oxidant label={H+},
+  water lower reductant label={H2(g)},
+  water upper oxidant label={O2(g)},
+  water upper reductant label={H2O},
+  water label pH low=1.2,
+  water label pH high=12.8]
+\end{lstlisting}
+
+For alkaline conventions, simply change the label contents, for example \key{water upper reductant label=HO-}.
+
+\ExampleDiagram{Water lines with customizable oxidant/reductant labels.}{\addPourbaix[element=Fe,c=1e-2,color=blue,water=true,water labels=true,water label offset=0.12,water lower reductant label={H2(g)},water upper oxidant label={O2(g)},domain labels=none];}
+
+\subsection{Filtering active species}
+Use \key{species} to compute a diagram with only a subset of the species. This is useful for teaching or for checking the role of an individual solid or ion.
+
+\begin{lstlisting}
+\addPourbaix[element=Fe,c=1e-2,species={Fe,Fe2+,Fe3+}]
+\end{lstlisting}
+
+\subsection{Superposing the same element at different concentrations}
+Use \key{name} when the same element appears more than once. The query macros can also use \key{element} and \key{c}.
+
+\begin{lstlisting}
+\addPourbaix[name=FeHigh,element=Fe,c=1e-2,color=blue]
+\addPourbaix[name=FeLow, element=Fe,c=1e-5,color=red]
+
+Slope of boundary 2 at c=1e-2: \pourbaixGetSlope[FeHigh]{2}
+Slope of boundary 2 at c=1e-5: \pourbaixGetSlope[FeLow]{2}
+
+% Alternative query syntax:
+\pourbaixGetSlope[element=Fe,c=1e-2]{2}
+\pourbaixGetSlope[element=Fe,c=1e-5]{2}
+\end{lstlisting}
+
+\section{Boundary concentration conventions}
+The key \key{c convention} determines the meaning of \key{c}. This is important for polynuclear species such as \ce{Cr2O7^{2-}}, \ce{V4O12^{4-}}, or \ce{Cl2}.
+
+\subsection{\val{species}}
+This is the historical and default convention. Every aqueous species is assigned activity \(a_i=c\). Pure solids, liquids, and gases have unit activity.
+
+\begin{lstlisting}
+\addPourbaix[element=Cr,c=1e-2,c convention=species]
+\end{lstlisting}
+
+\subsection{\val{element species equal}}
+Here \(c\) is interpreted as a total analytical concentration in the followed element. Along an aqueous/aqueous boundary between species \(A\) and \(B\), equal species concentrations are imposed:
+\[
+[A]=[B]=\frac{c}{\nu_A+\nu_B},
+\]
+where \(\nu_A\) and \(\nu_B\) are the numbers of atoms of the followed element in the two species.
+
+\begin{lstlisting}
+\addPourbaix[element=Cr,c=1e-2,c convention={element species equal}]
+\end{lstlisting}
+
+\subsection{\val{element element equal}}
+Here \(c\) is again a total analytical concentration, but equal element amounts are imposed on the two sides:
+\[
+\nu_A[A]=\nu_B[B]=\frac{c}{2}.
+\]
+Thus \([A]=c/(2\nu_A)\) and \([B]=c/(2\nu_B)\).
+
+\begin{lstlisting}
+\addPourbaix[element=Cr,c=1e-2,c convention={element element equal}]
+\end{lstlisting}
+
+For a solid/solution boundary, both analytical conventions reduce to assigning the aqueous species concentration \(c/\nu\), where \(\nu\) is the number of followed-element atoms in that aqueous species.
+
+\section{Public macros for database extension}
+\subsection{\macro{PourbaixDeclareElement}}
+Creates or updates an element record.
+\begin{lstlisting}
+\PourbaixDeclareElement[symbol=X,name={Example metal},metal=X,Emin=-1.2,Emax=1.8]
+\end{lstlisting}
+Keys: \key{symbol}, \key{element}, \key{id}, \key{name}, \key{metal}, \key{Emin}, \key{Emax}.
+
+\subsection{\macro{PourbaixAddSpecies}}
+Adds one species to an element.
+\begin{lstlisting}
+\PourbaixAddSpecies[element=X,id={X2+},formula={X^{2+}},phase=aq,ox state=2,n metal=1]
+\PourbaixAddSpecies[element=X,id={X(OH)2},formula={X(OH)_2},phase=s,ox state=2]
+\end{lstlisting}
+Keys: \key{element}, \key{id}, \key{formula}, \key{phase}, \key{ox state}, \key{color}, \key{n metal}.
+
+\subsection{\macro{PourbaixAddAcidBase}}
+Adds one vertical boundary. The convention is
+\[
+ n_\mathrm{acid}\,\mathrm{acid}+n_{\ce{H2O}}\ce{H2O}
+ \rightleftharpoons
+ n_\mathrm{base}\,\mathrm{base}+n_{\ce{H}}\ce{H+}.
+\]
+\begin{lstlisting}
+\PourbaixAddAcidBase[element=X,acid={X2+},base={X(OH)2},
+  nH=2,nH2O=2,pKa=9.7]
+\end{lstlisting}
+Keys: \key{element}, \key{acid}, \key{base}, \key{nH}, \key{nH2O}, \key{pKa}, \key{n acid}, \key{n base}.
+
+\subsection{\macro{PourbaixAddRedox}}
+Adds one redox half-reaction. The general convention is
+\[
+ n_\mathrm{ox}\,\mathrm{Ox}+n_{\ce{H}}\ce{H+}+n_{\ce{H2O,left}}\ce{H2O}+n e^-
+ \rightleftharpoons
+ n_\mathrm{red}\,\mathrm{Red}+n_{\ce{H,right}}\ce{H+}+n_{\ce{H2O}}\ce{H2O}.
+\]
+\begin{lstlisting}
+\PourbaixAddRedox[element=X,ox={X2+},red=X,E0=-0.38,n=2]
+\PourbaixAddRedox[element=X,ox={X(OH)2},red=X,E0={auto},n=2,nH=2,nH2O=2]
+\end{lstlisting}
+Keys: \key{element}, \key{ox}, \key{red}, \key{E0}, \key{n}, \key{nH}, \key{nH right}, \key{nH2O}, \key{nH2O left}, \key{n ox}, \key{n red}. Use \val{E0=auto} for a thermodynamically derived potential.
+
+\subsection{\macro{PourbaixAddTemplate}}
+Declaring a new element manually with \macro{PourbaixDeclareElement}, \macro{PourbaixAddSpecies}, \macro{PourbaixAddAcidBase}, and \macro{PourbaixAddRedox} is deliberately explicit, but it is also tedious. For a realistic element one must enter species identifiers, formulas, phases, oxidation states, acid/base reactions, redox half-reactions, and several stoichiometric coefficients. \macro{PourbaixAddTemplate} performs this tedious bookkeeping for the user.
+
+The template macro parses a list of species, infers the likely declarations, balances acid/base and redox equations, and writes a complete copyable block to the \file{.log}. The user then has one remaining task: replace the thermodynamic values marked \val{TODO}. The set of required values is determined automatically: vertical constants are requested, low-pH standard potentials between consecutive oxidation states are requested, and thermodynamically redundant potentials are emitted as \val{E0=auto}. The expert part explains how this independent set is selected and how the derived constants are reconstructed.
+
+\begin{lstlisting}
+\PourbaixAddTemplate[element=V,name={Vanadium}]
+  {VO2^+, VO^2+, V^3+, V^2+, V2O5(s), V2O4(s), V2O3(s), V4O12^4-}
+\end{lstlisting}
+
+The most useful part of the resulting log looks like this:
+\begin{lstlisting}[caption={Representative excerpt from the \file{.log} produced by \macro{PourbaixAddTemplate}.}]
+% ============================================================
+% Skeleton generated by \PourbaixAddTemplate
+% Element : V
+% Thermodynamic mode: only independent constants are requested;
+% chemical equations associated with pKa values are printed;
+% redundant potentials are expressed by thermodynamic cycles.
+% ============================================================
+\PourbaixDeclareElement[symbol=V, name={Vanadium}, metal=V]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO2+},
+  formula={VO_2^{+}},
+  phase=aq,
+  ox state=5,
+  n metal=1
+]
+% ... species declarations omitted in this excerpt ...
+
+% Independent vertical constants
+% equation associated with pKa(V3+/V2O3) :
+% 2 V^3+(aq) + 3 H2O <=> V2O3(s) + 6 H+
+\PourbaixAddAcidBase[
+  element=V,
+  acid={V3+},
+  base=V2O3,
+  n acid=2,
+  nH=6,
+  nH2O=3,
+  pKa={TODO}
+]
+
+% Redox couples: independent and derived potentials
+% independent potential: E0(V3+/V2+)
+% half-equation associated with E0(V3+/V2+) :
+% V^3+(aq) + e- <=> V^2+(aq)
+\PourbaixAddRedox[
+  element=V,
+  ox={V3+},
+  red={V2+},
+  E0={TODO},
+  n=1
+]
+
+% derived potential: E0(V2O3/V2+) = E0(V3+/V2+) + 0.03*pKa(V3+/V2O3)
+% half-equation associated with E0(V2O3/V2+) :
+% V2O3(s) + 6 H+ + 2 e- <=> 2 V^2+(aq) + 3 H2O
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O3,
+  red={V2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+
+% Independent numerical data to supply:
+%   pKa(V3+/V2O3) = TODO
+%   pKa(VO 2+/V2O4) = TODO
+%   pKa(VO2+/V2O5) = TODO
+%   pKa(V2O5/V4O12 4-) = TODO
+%   E0(V3+/V2+) = TODO V
+%   E0(VO 2+/V3+) = TODO V
+%   E0(VO2+/VO 2+) = TODO V
+%
+% Redox potentials derived by thermodynamic cycles:
+%   E0(V2O3/V2+) = E0(V3+/V2+) + 0.03*pKa(V3+/V2O3)
+%   E0(V2O4/V3+) = E0(VO 2+/V3+) + 0.03*pKa(VO 2+/V2O4)
+%   E0(V2O5/VO 2+) = E0(VO2+/VO 2+) + 0.03*pKa(VO2+/V2O5)
+
+\end{lstlisting}
+
+The main keys are listed below.
+\begin{center}
+\begin{tabular}{@{}p{0.27\linewidth}p{0.18\linewidth}p{0.47\linewidth}@{}}
+\toprule
+\textbf{Key} & \textbf{Default} & \textbf{Meaning}\\
+\midrule
+\key{element}, \key{symbol} & inferred & followed element symbol\\
+\key{name} & element & human-readable name\\
+\key{metal} & element & followed element used for atom counting\\
+\key{redox pairs} & \val{dominant} & emit dominant, adjacent, or all inferred redox pairs\\
+\key{acid base} & \val{true} & emit inferred acid/base declarations\\
+\key{redox} & \val{true} & emit inferred redox declarations\\
+\key{comments} & \val{true} & include explanatory comments and equations in the log\\
+\key{phase default} & \val{aq} & phase assumed when a species has no explicit phase\\
+\key{check database} & \val{true} & compare generated values with existing database values when possible\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Loading, validating, and inspecting data}
+\begin{lstlisting}
+\PourbaixLoadData{my-extra-data.tex}
+\PourbaixLoadLuaData{my-extra-data.lua}
+\PourbaixValidateElement{V}
+\PourbaixShowElementData{V}
+\end{lstlisting}
+
+\section{Boundary query macros}
+After a diagram has been drawn, the package stores numerical information about its boundaries. Vertical boundaries are identified by letters; non-vertical boundaries are identified by numbers.
+
+\begin{lstlisting}
+\pourbaixGetSlope[element=Fe,c=1e-2]{2}
+\pourbaixGetYIntercept[element=Fe,c=1e-2]{2}
+\pourbaixGetpH[element=Fe,c=1e-2]{b}
+\pourbaixGetEquation[element=Fe,c=1e-2]{2}[4]
+\end{lstlisting}
+
+The optional argument can be a simple name, such as \val{FeHigh}, or a key--value selector such as \val{element=Fe,c=1e-2,c convention=species}. Use \key{name} in \macro{addPourbaix} whenever several diagrams have the same element and concentration.
+
+\section{Gallery of diagrams}
+\subsection{Built-in diagrams from \file{pourbaix-data.lua}}
+All diagrams in this gallery use the default domain-label mode, namely formula labels rendered through \pkg{mhchem}.
+
+\begin{center}
+\GalleryDiagram{Fe}{Iron}
+\hfill
+\GalleryDiagram{Cu}{Copper}
+\par\medskip
+\GalleryDiagram{Zn}{Zinc}
+\hfill
+\GalleryDiagram{Al}{Aluminum}
+\par\medskip
+\GalleryDiagram{Ag}{Silver}
+\hfill
+\GalleryDiagram{Pb}{Lead}
+\par\medskip
+\GalleryDiagram{Ni}{Nickel}
+\hfill
+\GalleryDiagram{Au}{Gold}
+\par\medskip
+\GalleryDiagram{Cr}{Chromium}
+\hfill
+\GalleryDiagram{Mn}{Manganese}
+\par\medskip
+\GalleryDiagram{Cl}{Chlorine}
+\end{center}
+
+\subsection{Template-based examples}
+These examples are not built into \file{pourbaix-data.lua}; they are declared in TeX from data originally generated with \macro{PourbaixAddTemplate} and then completed with numerical constants. The diagrams below are generated inside this documentation; they are not included as pre-rendered external PDFs.
+
+\subsubsection{Vanadium}
+The original template request is:
+\begin{lstlisting}
+\PourbaixAddTemplate[element=V,name={Vanadium}]
+  {VO2^+, VO^2+, V^3+, V^2+, V2O5(s), V2O4(s), V2O3(s), V4O12^4-}
+\end{lstlisting}
+After copying the generated block from the log and filling the missing constants, the completed data block used by the documentation is:
+\begin{lstlisting}
+\PourbaixDeclareElement[symbol=V, name={Vanadium}, metal=V]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO2+},
+  formula={VO_2^{+}},
+  phase=aq,
+  ox state=5,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO 2+},
+  formula={VO^{2+}},
+  phase=aq,
+  ox state=4,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V2+},
+  formula={V^{2+}},
+  phase=aq,
+  ox state=2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V3+},
+  formula={V^{3+}},
+  phase=aq,
+  ox state=3,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O5,
+  formula={V_2O_5},
+  phase=s,
+  ox state=5,
+  n metal=2
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O3,
+  formula={V_2O_3},
+  phase=s,
+  ox state=3,
+  n metal=2
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V4O12 4-},
+  formula={V_4O_{12}^{4-}},
+  phase=aq,
+  ox state=5,
+  n metal=4
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O4,
+  formula={V_2O_4},
+  phase=s,
+  ox state=4,
+  n metal=2
+]
+% Independent vertical constants
+\PourbaixAddAcidBase[
+  element=V,
+  acid={V3+},
+  base=V2O3,
+  n acid=2,
+  nH=6,
+  nH2O=3,
+  pKa={13.28}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid={VO 2+},
+  base=V2O4,
+  n acid=2,
+  nH=4,
+  nH2O=2,
+  pKa={10.4}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid={VO2+},
+  base=V2O5,
+  n acid=2,
+  nH=2,
+  nH2O=1,
+  pKa={-1.4}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid=V2O5,
+  base={V4O12 4-},
+  n acid=2,
+  nH=4,
+  nH2O=2,
+  pKa={13}
+]
+% Redox couples: independent and derived potentials
+% independent potential: E0(V3+/V2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={V3+},
+  red={V2+},
+  E0={-.35},
+  n=1
+]
+% derived potential: E0(V2O3/V2+) = E0(V3+/V2+) + 0.03*pKa(V3+/V2O3)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O3,
+  red={V2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+% derived potential: E0(VO 2+/V2+) = 0.5*E0(V3+/V2+) + 0.5*E0(VO 2+/V3+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO 2+},
+  red={V2+},
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% independent potential: E0(VO 2+/V3+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO 2+},
+  red={V3+},
+  E0={0.44},
+  n=1,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V2O4/V2+) = 0.5*E0(V3+/V2+) + 0.5*E0(VO 2+/V3+) + 0.015*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red={V2+},
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(V2O4/V3+) = E0(VO 2+/V3+) + 0.03*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red={V3+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(V2O4/V2O3) = E0(VO 2+/V3+) - 0.03*pKa(V3+/V2O3) + 0.03*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red=V2O3,
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(VO2+/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={V2+},
+  E0={auto},
+  n=3,
+  nH=4,
+  nH2O=2
+]
+% derived potential: E0(VO2+/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={V3+},
+  E0={auto},
+  n=2,
+  nH=4,
+  nH2O=2
+]
+% independent potential: E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={VO 2+},
+  E0={1},
+  n=1,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V2O5/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+) + 0.01*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={V2+},
+  E0={auto},
+  n=6,
+  n red=2,
+  nH=10,
+  nH2O=5
+]
+% derived potential: E0(V2O5/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={V3+},
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=10,
+  nH2O=5
+]
+% derived potential: E0(V2O5/V2O3) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) - 0.015*pKa(V3+/V2O3) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red=V2O3,
+  E0={auto},
+  n=4,
+  nH=4,
+  nH2O=2
+]
+% derived potential: E0(V2O5/VO 2+) = E0(VO2+/VO 2+) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={VO 2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+% derived potential: E0(V2O5/V2O4) = E0(VO2+/VO 2+) - 0.03*pKa(VO 2+/V2O4) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red=V2O4,
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V4O12 4-/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+) + 0.005*pKa(V2O5/V4O12 4-) + 0.01*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={V2+},
+  E0={auto},
+  n=12,
+  n red=4,
+  nH=24,
+  nH2O=12
+]
+% derived potential: E0(V4O12 4-/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.0075*pKa(V2O5/V4O12 4-) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={V3+},
+  E0={auto},
+  n=8,
+  n red=4,
+  nH=24,
+  nH2O=12
+]
+% derived potential: E0(V4O12 4-/V2O3) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.0075*pKa(V2O5/V4O12 4-) - 0.015*pKa(V3+/V2O3) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red=V2O3,
+  E0={auto},
+  n=8,
+  n red=2,
+  nH=12,
+  nH2O=6
+]
+% derived potential: E0(V4O12 4-/VO 2+) = E0(VO2+/VO 2+) + 0.015*pKa(V2O5/V4O12 4-) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={VO 2+},
+  E0={auto},
+  n=4,
+  n red=4,
+  nH=16,
+  nH2O=8
+]
+% derived potential: E0(V4O12 4-/V2O4) = E0(VO2+/VO 2+) + 0.015*pKa(V2O5/V4O12 4-) - 0.03*pKa(VO 2+/V2O4) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red=V2O4,
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+\end{lstlisting}
+The diagram is then produced with the following plotting code:
+\begin{lstlisting}
+\begin{tikzpicture}
+\begin{axis}[pourbaix axis,xmin=0,xmax=5,ymin=-1.2,ymax=2]
+  \addPourbaix[element=V,c=1e-2,color=blue,domain labels=formula,frontier labels=true,water=true];
+\end{axis}
+\end{tikzpicture}
+\end{lstlisting}
+\begin{lstlisting}[caption={Completed Vanadium data block used by this manual.}]
+\PourbaixDeclareElement[symbol=V, name={Vanadium}, metal=V]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO2+},
+  formula={VO_2^{+}},
+  phase=aq,
+  ox state=5,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO 2+},
+  formula={VO^{2+}},
+  phase=aq,
+  ox state=4,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V2+},
+  formula={V^{2+}},
+  phase=aq,
+  ox state=2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V3+},
+  formula={V^{3+}},
+  phase=aq,
+  ox state=3,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O5,
+  formula={V_2O_5},
+  phase=s,
+  ox state=5,
+  n metal=2
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O3,
+  formula={V_2O_3},
+  phase=s,
+  ox state=3,
+  n metal=2
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V4O12 4-},
+  formula={V_4O_{12}^{4-}},
+  phase=aq,
+  ox state=5,
+  n metal=4
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O4,
+  formula={V_2O_4},
+  phase=s,
+  ox state=4,
+  n metal=2
+]
+% Independent vertical constants
+\PourbaixAddAcidBase[
+  element=V,
+  acid={V3+},
+  base=V2O3,
+  n acid=2,
+  nH=6,
+  nH2O=3,
+  pKa={13.28}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid={VO 2+},
+  base=V2O4,
+  n acid=2,
+  nH=4,
+  nH2O=2,
+  pKa={10.4}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid={VO2+},
+  base=V2O5,
+  n acid=2,
+  nH=2,
+  nH2O=1,
+  pKa={-1.4}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid=V2O5,
+  base={V4O12 4-},
+  n acid=2,
+  nH=4,
+  nH2O=2,
+  pKa={13}
+]
+% Redox couples: independent and derived potentials
+% independent potential: E0(V3+/V2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={V3+},
+  red={V2+},
+  E0={-.35},
+  n=1
+]
+% derived potential: E0(V2O3/V2+) = E0(V3+/V2+) + 0.03*pKa(V3+/V2O3)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O3,
+  red={V2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+% derived potential: E0(VO 2+/V2+) = 0.5*E0(V3+/V2+) + 0.5*E0(VO 2+/V3+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO 2+},
+  red={V2+},
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% independent potential: E0(VO 2+/V3+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO 2+},
+  red={V3+},
+  E0={0.44},
+  n=1,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V2O4/V2+) = 0.5*E0(V3+/V2+) + 0.5*E0(VO 2+/V3+) + 0.015*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red={V2+},
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(V2O4/V3+) = E0(VO 2+/V3+) + 0.03*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red={V3+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(V2O4/V2O3) = E0(VO 2+/V3+) - 0.03*pKa(V3+/V2O3) + 0.03*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red=V2O3,
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(VO2+/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={V2+},
+  E0={auto},
+  n=3,
+  nH=4,
+  nH2O=2
+]
+% derived potential: E0(VO2+/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={V3+},
+  E0={auto},
+  n=2,
+  nH=4,
+  nH2O=2
+]
+% independent potential: E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={VO 2+},
+  E0={1},
+  n=1,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V2O5/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+) + 0.01*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={V2+},
+  E0={auto},
+  n=6,
+  n red=2,
+  nH=10,
+  nH2O=5
+]
+% derived potential: E0(V2O5/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={V3+},
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=10,
+  nH2O=5
+]
+% derived potential: E0(V2O5/V2O3) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) - 0.015*pKa(V3+/V2O3) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red=V2O3,
+  E0={auto},
+  n=4,
+  nH=4,
+  nH2O=2
+]
+% derived potential: E0(V2O5/VO 2+) = E0(VO2+/VO 2+) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={VO 2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+% derived potential: E0(V2O5/V2O4) = E0(VO2+/VO 2+) - 0.03*pKa(VO 2+/V2O4) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red=V2O4,
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V4O12 4-/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+) + 0.005*pKa(V2O5/V4O12 4-) + 0.01*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={V2+},
+  E0={auto},
+  n=12,
+  n red=4,
+  nH=24,
+  nH2O=12
+]
+% derived potential: E0(V4O12 4-/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.0075*pKa(V2O5/V4O12 4-) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={V3+},
+  E0={auto},
+  n=8,
+  n red=4,
+  nH=24,
+  nH2O=12
+]
+% derived potential: E0(V4O12 4-/V2O3) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.0075*pKa(V2O5/V4O12 4-) - 0.015*pKa(V3+/V2O3) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red=V2O3,
+  E0={auto},
+  n=8,
+  n red=2,
+  nH=12,
+  nH2O=6
+]
+% derived potential: E0(V4O12 4-/VO 2+) = E0(VO2+/VO 2+) + 0.015*pKa(V2O5/V4O12 4-) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={VO 2+},
+  E0={auto},
+  n=4,
+  n red=4,
+  nH=16,
+  nH2O=8
+]
+% derived potential: E0(V4O12 4-/V2O4) = E0(VO2+/VO 2+) + 0.015*pKa(V2O5/V4O12 4-) - 0.03*pKa(VO 2+/V2O4) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red=V2O4,
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+
+\end{lstlisting}
+\begin{figure}[H]\centering
+\PourbaixDeclareElement[symbol=V, name={Vanadium}, metal=V]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO2+},
+  formula={VO_2^{+}},
+  phase=aq,
+  ox state=5,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={VO 2+},
+  formula={VO^{2+}},
+  phase=aq,
+  ox state=4,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V2+},
+  formula={V^{2+}},
+  phase=aq,
+  ox state=2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V3+},
+  formula={V^{3+}},
+  phase=aq,
+  ox state=3,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O5,
+  formula={V_2O_5},
+  phase=s,
+  ox state=5,
+  n metal=2
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O3,
+  formula={V_2O_3},
+  phase=s,
+  ox state=3,
+  n metal=2
+]
+\PourbaixAddSpecies[
+  element=V,
+  id={V4O12 4-},
+  formula={V_4O_{12}^{4-}},
+  phase=aq,
+  ox state=5,
+  n metal=4
+]
+\PourbaixAddSpecies[
+  element=V,
+  id=V2O4,
+  formula={V_2O_4},
+  phase=s,
+  ox state=4,
+  n metal=2
+]
+% Independent vertical constants
+\PourbaixAddAcidBase[
+  element=V,
+  acid={V3+},
+  base=V2O3,
+  n acid=2,
+  nH=6,
+  nH2O=3,
+  pKa={13.28}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid={VO 2+},
+  base=V2O4,
+  n acid=2,
+  nH=4,
+  nH2O=2,
+  pKa={10.4}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid={VO2+},
+  base=V2O5,
+  n acid=2,
+  nH=2,
+  nH2O=1,
+  pKa={-1.4}
+]
+\PourbaixAddAcidBase[
+  element=V,
+  acid=V2O5,
+  base={V4O12 4-},
+  n acid=2,
+  nH=4,
+  nH2O=2,
+  pKa={13}
+]
+% Redox couples: independent and derived potentials
+% independent potential: E0(V3+/V2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={V3+},
+  red={V2+},
+  E0={-.35},
+  n=1
+]
+% derived potential: E0(V2O3/V2+) = E0(V3+/V2+) + 0.03*pKa(V3+/V2O3)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O3,
+  red={V2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+% derived potential: E0(VO 2+/V2+) = 0.5*E0(V3+/V2+) + 0.5*E0(VO 2+/V3+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO 2+},
+  red={V2+},
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% independent potential: E0(VO 2+/V3+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO 2+},
+  red={V3+},
+  E0={0.44},
+  n=1,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V2O4/V2+) = 0.5*E0(V3+/V2+) + 0.5*E0(VO 2+/V3+) + 0.015*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red={V2+},
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(V2O4/V3+) = E0(VO 2+/V3+) + 0.03*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red={V3+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(V2O4/V2O3) = E0(VO 2+/V3+) - 0.03*pKa(V3+/V2O3) + 0.03*pKa(VO 2+/V2O4)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O4,
+  red=V2O3,
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(VO2+/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={V2+},
+  E0={auto},
+  n=3,
+  nH=4,
+  nH2O=2
+]
+% derived potential: E0(VO2+/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={V3+},
+  E0={auto},
+  n=2,
+  nH=4,
+  nH2O=2
+]
+% independent potential: E0(VO2+/VO 2+)
+\PourbaixAddRedox[
+  element=V,
+  ox={VO2+},
+  red={VO 2+},
+  E0={1},
+  n=1,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V2O5/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+) + 0.01*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={V2+},
+  E0={auto},
+  n=6,
+  n red=2,
+  nH=10,
+  nH2O=5
+]
+% derived potential: E0(V2O5/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={V3+},
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=10,
+  nH2O=5
+]
+% derived potential: E0(V2O5/V2O3) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) - 0.015*pKa(V3+/V2O3) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red=V2O3,
+  E0={auto},
+  n=4,
+  nH=4,
+  nH2O=2
+]
+% derived potential: E0(V2O5/VO 2+) = E0(VO2+/VO 2+) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red={VO 2+},
+  E0={auto},
+  n=2,
+  n red=2,
+  nH=6,
+  nH2O=3
+]
+% derived potential: E0(V2O5/V2O4) = E0(VO2+/VO 2+) - 0.03*pKa(VO 2+/V2O4) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox=V2O5,
+  red=V2O4,
+  E0={auto},
+  n=2,
+  nH=2,
+  nH2O=1
+]
+% derived potential: E0(V4O12 4-/V2+) = 0.3333333333*E0(V3+/V2+) + 0.3333333333*E0(VO 2+/V3+) + 0.3333333333*E0(VO2+/VO 2+) + 0.005*pKa(V2O5/V4O12 4-) + 0.01*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={V2+},
+  E0={auto},
+  n=12,
+  n red=4,
+  nH=24,
+  nH2O=12
+]
+% derived potential: E0(V4O12 4-/V3+) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.0075*pKa(V2O5/V4O12 4-) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={V3+},
+  E0={auto},
+  n=8,
+  n red=4,
+  nH=24,
+  nH2O=12
+]
+% derived potential: E0(V4O12 4-/V2O3) = 0.5*E0(VO 2+/V3+) + 0.5*E0(VO2+/VO 2+) + 0.0075*pKa(V2O5/V4O12 4-) - 0.015*pKa(V3+/V2O3) + 0.015*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red=V2O3,
+  E0={auto},
+  n=8,
+  n red=2,
+  nH=12,
+  nH2O=6
+]
+% derived potential: E0(V4O12 4-/VO 2+) = E0(VO2+/VO 2+) + 0.015*pKa(V2O5/V4O12 4-) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red={VO 2+},
+  E0={auto},
+  n=4,
+  n red=4,
+  nH=16,
+  nH2O=8
+]
+% derived potential: E0(V4O12 4-/V2O4) = E0(VO2+/VO 2+) + 0.015*pKa(V2O5/V4O12 4-) - 0.03*pKa(VO 2+/V2O4) + 0.03*pKa(VO2+/V2O5)
+\PourbaixAddRedox[
+  element=V,
+  ox={V4O12 4-},
+  red=V2O4,
+  E0={auto},
+  n=4,
+  n red=2,
+  nH=8,
+  nH2O=4
+]
+
+\begin{tikzpicture}
+\begin{axis}[pourbaix axis,width=.82\linewidth,height=6.2cm,xmin=0,xmax=5,ymin=-1.2,ymax=2]
+  \addPourbaix[element=V,c=1e-2,color=blue,domain labels=formula,frontier labels=true,water=true,pHmin=0,pHmax=5,Emin=-1.2,Emax=2];
+\end{axis}
+\end{tikzpicture}
+\caption{Vanadium diagram generated directly in the manual from template-completed data.}
+\end{figure}
+
+\subsubsection{Sulfur}
+The sulfur data exercise virtual redox boundaries and several acid/base forms of the same oxidation state.
+\begin{lstlisting}
+\PourbaixAddTemplate[element=S,name={Sulfur}]
+  {HSO4^-, SO4^2-, S(s), H2S(aq), HS^-, S^2-}
+\end{lstlisting}
+After filling the thermodynamic data, the completed data block used by the documentation is:
+\begin{lstlisting}
+\PourbaixDeclareElement[symbol=S, name={Sulfur}, metal=S]
+\PourbaixAddSpecies[
+  element=S,
+  id=S,
+  formula={S},
+  phase=s,
+  ox state=0,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id=H2S,
+  formula={H_2S},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={HS-},
+  formula={HS^{-}},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={S2-},
+  formula={S^{2-}},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={HSO4-},
+  formula={HSO_4^{-}},
+  phase=aq,
+  ox state=6,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={SO4 2-},
+  formula={SO_4^{2-}},
+  phase=aq,
+  ox state=6,
+  n metal=1
+]
+% Independent vertical constants
+% equation associated with pKa(HS-/S2-) : HS^-(aq) <=> S^2-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid={HS-},
+  base={S2-},
+  nH=1,
+  nH2O=0,
+  pKa={13}
+]
+% equation associated with pKa(H2S/HS-) : H2S(aq) <=> HS^-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid=H2S,
+  base={HS-},
+  nH=1,
+  nH2O=0,
+  pKa={7}
+]
+% equation associated with pKa(HSO4-/SO4 2-) : HSO4^-(aq) <=> SO4^2-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid={HSO4-},
+  base={SO4 2-},
+  nH=1,
+  nH2O=0,
+  pKa={1.9}
+]
+% Redox couples: independent and derived potentials
+% independent potential: E0(S/S2-)
+% half-equation associated with E0(S/S2-) : S(s) + 2 e- <=> S^2-(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red={S2-},
+  E0={auto},
+  n=2
+]
+% derived potential: E0(S/HS-) = E0(S/S2-) + 0.03*pKa(HS-/S2-)
+% half-equation associated with E0(S/HS-) : S(s) + H+ + 2 e- <=> HS^-(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red={HS-},
+  E0={auto},
+  n=2,
+  nH=1
+]
+% derived potential: E0(S/H2S) = E0(S/S2-) + 0.03*pKa(H2S/HS-) + 0.03*pKa(HS-/S2-)
+% half-equation associated with E0(S/H2S) : S(s) + 2 H+ + 2 e- <=> H2S(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red=H2S,
+  E0={0.14},
+  n=2,
+  nH=2
+]
+% independent potential: E0(SO4 2-/S)
+% half-equation associated with E0(SO4 2-/S) : SO4^2-(aq) + 8 H+ + 6 e- <=> S(s) + 4 H2O
+\PourbaixAddRedox[
+  element=S,
+  ox={SO4 2-},
+  red=S,
+  E0={auto},
+  n=6,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(HSO4-/S) = E0(SO4 2-/S) - 0.01*pKa(HSO4-/SO4 2-)
+% half-equation associated with E0(HSO4-/S) : HSO4^-(aq) + 7 H+ + 6 e- <=> S(s) + 4 H2O
+\PourbaixAddRedox[
+  element=S,
+  ox={HSO4-},
+  red=S,
+  E0={0.34},
+  n=6,
+  nH=7,
+  nH2O=4
+]
+\end{lstlisting}
+The diagram is then produced with the following plotting code:
+\begin{lstlisting}
+\begin{tikzpicture}
+\begin{axis}[pourbaix axis,ymin=-1.2,ymax=2]
+  \addPourbaix[element=S,c=1e-1,color=blue,domain labels=formula,frontier labels=true,water=true];
+\end{axis}
+\end{tikzpicture}
+\end{lstlisting}
+\begin{lstlisting}[caption={Completed Sulfur data block used by this manual.}]
+\PourbaixDeclareElement[symbol=S, name={Sulfur}, metal=S]
+\PourbaixAddSpecies[
+  element=S,
+  id=S,
+  formula={S},
+  phase=s,
+  ox state=0,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id=H2S,
+  formula={H_2S},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={HS-},
+  formula={HS^{-}},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={S2-},
+  formula={S^{2-}},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={HSO4-},
+  formula={HSO_4^{-}},
+  phase=aq,
+  ox state=6,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={SO4 2-},
+  formula={SO_4^{2-}},
+  phase=aq,
+  ox state=6,
+  n metal=1
+]
+% Independent vertical constants
+% equation associated with pKa(HS-/S2-) : HS^-(aq) <=> S^2-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid={HS-},
+  base={S2-},
+  nH=1,
+  nH2O=0,
+  pKa={13}
+]
+% equation associated with pKa(H2S/HS-) : H2S(aq) <=> HS^-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid=H2S,
+  base={HS-},
+  nH=1,
+  nH2O=0,
+  pKa={7}
+]
+% equation associated with pKa(HSO4-/SO4 2-) : HSO4^-(aq) <=> SO4^2-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid={HSO4-},
+  base={SO4 2-},
+  nH=1,
+  nH2O=0,
+  pKa={1.9}
+]
+% Redox couples: independent and derived potentials
+% independent potential: E0(S/S2-)
+% half-equation associated with E0(S/S2-) : S(s) + 2 e- <=> S^2-(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red={S2-},
+  E0={auto},
+  n=2
+]
+% derived potential: E0(S/HS-) = E0(S/S2-) + 0.03*pKa(HS-/S2-)
+% half-equation associated with E0(S/HS-) : S(s) + H+ + 2 e- <=> HS^-(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red={HS-},
+  E0={auto},
+  n=2,
+  nH=1
+]
+% derived potential: E0(S/H2S) = E0(S/S2-) + 0.03*pKa(H2S/HS-) + 0.03*pKa(HS-/S2-)
+% half-equation associated with E0(S/H2S) : S(s) + 2 H+ + 2 e- <=> H2S(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red=H2S,
+  E0={0.14},
+  n=2,
+  nH=2
+]
+% independent potential: E0(SO4 2-/S)
+% half-equation associated with E0(SO4 2-/S) : SO4^2-(aq) + 8 H+ + 6 e- <=> S(s) + 4 H2O
+\PourbaixAddRedox[
+  element=S,
+  ox={SO4 2-},
+  red=S,
+  E0={auto},
+  n=6,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(HSO4-/S) = E0(SO4 2-/S) - 0.01*pKa(HSO4-/SO4 2-)
+% half-equation associated with E0(HSO4-/S) : HSO4^-(aq) + 7 H+ + 6 e- <=> S(s) + 4 H2O
+\PourbaixAddRedox[
+  element=S,
+  ox={HSO4-},
+  red=S,
+  E0={0.34},
+  n=6,
+  nH=7,
+  nH2O=4
+]
+
+\end{lstlisting}
+\begin{figure}[H]\centering
+\PourbaixDeclareElement[symbol=S, name={Sulfur}, metal=S]
+\PourbaixAddSpecies[
+  element=S,
+  id=S,
+  formula={S},
+  phase=s,
+  ox state=0,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id=H2S,
+  formula={H_2S},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={HS-},
+  formula={HS^{-}},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={S2-},
+  formula={S^{2-}},
+  phase=aq,
+  ox state=-2,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={HSO4-},
+  formula={HSO_4^{-}},
+  phase=aq,
+  ox state=6,
+  n metal=1
+]
+\PourbaixAddSpecies[
+  element=S,
+  id={SO4 2-},
+  formula={SO_4^{2-}},
+  phase=aq,
+  ox state=6,
+  n metal=1
+]
+% Independent vertical constants
+% equation associated with pKa(HS-/S2-) : HS^-(aq) <=> S^2-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid={HS-},
+  base={S2-},
+  nH=1,
+  nH2O=0,
+  pKa={13}
+]
+% equation associated with pKa(H2S/HS-) : H2S(aq) <=> HS^-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid=H2S,
+  base={HS-},
+  nH=1,
+  nH2O=0,
+  pKa={7}
+]
+% equation associated with pKa(HSO4-/SO4 2-) : HSO4^-(aq) <=> SO4^2-(aq) + H+
+\PourbaixAddAcidBase[
+  element=S,
+  acid={HSO4-},
+  base={SO4 2-},
+  nH=1,
+  nH2O=0,
+  pKa={1.9}
+]
+% Redox couples: independent and derived potentials
+% independent potential: E0(S/S2-)
+% half-equation associated with E0(S/S2-) : S(s) + 2 e- <=> S^2-(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red={S2-},
+  E0={auto},
+  n=2
+]
+% derived potential: E0(S/HS-) = E0(S/S2-) + 0.03*pKa(HS-/S2-)
+% half-equation associated with E0(S/HS-) : S(s) + H+ + 2 e- <=> HS^-(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red={HS-},
+  E0={auto},
+  n=2,
+  nH=1
+]
+% derived potential: E0(S/H2S) = E0(S/S2-) + 0.03*pKa(H2S/HS-) + 0.03*pKa(HS-/S2-)
+% half-equation associated with E0(S/H2S) : S(s) + 2 H+ + 2 e- <=> H2S(aq)
+\PourbaixAddRedox[
+  element=S,
+  ox=S,
+  red=H2S,
+  E0={0.14},
+  n=2,
+  nH=2
+]
+% independent potential: E0(SO4 2-/S)
+% half-equation associated with E0(SO4 2-/S) : SO4^2-(aq) + 8 H+ + 6 e- <=> S(s) + 4 H2O
+\PourbaixAddRedox[
+  element=S,
+  ox={SO4 2-},
+  red=S,
+  E0={auto},
+  n=6,
+  nH=8,
+  nH2O=4
+]
+% derived potential: E0(HSO4-/S) = E0(SO4 2-/S) - 0.01*pKa(HSO4-/SO4 2-)
+% half-equation associated with E0(HSO4-/S) : HSO4^-(aq) + 7 H+ + 6 e- <=> S(s) + 4 H2O
+\PourbaixAddRedox[
+  element=S,
+  ox={HSO4-},
+  red=S,
+  E0={0.34},
+  n=6,
+  nH=7,
+  nH2O=4
+]
+
+\begin{tikzpicture}
+\begin{axis}[pourbaix axis,width=.82\linewidth,height=6.2cm,ymin=-1.2,ymax=2]
+  \addPourbaix[element=S,c=1e-1,color=blue,domain labels=formula,frontier labels=true,water=true,Emin=-1.2,Emax=2];
+\end{axis}
+\end{tikzpicture}
+\caption{Sulfur diagram generated directly in the manual from template-completed data.}
+\end{figure}
+
+\clearpage
+\part{Expert manual}
+
+\section{Architecture}
+\pkg{pourbaix} is organized around a strict separation of concerns. The TeX layer provides a pgfkeys interface, transfers normalized strings to Lua, and receives literal pgfplots/TikZ code. The Lua layer owns the thermodynamic model: activity conventions, acid/base reduction, redox ladder construction, dismutation, derived potentials, virtual boundaries, clipping, and label placement.
+
+This design avoids implementing numerical algorithms in TeX. It also makes the generated pgfplots code intentionally simple: a boundary is a straight segment, represented by two points, optionally followed by a node used as a frontier label.
+
+\section{Thermodynamic data model}
+The main data table is indexed by element symbols. An entry contains
+\begin{itemize}
+\item \code{name}: human-readable name;
+\item \code{metal}: followed element symbol;
+\item \code{eRange}: default potential range;
+\item \code{species}: map from internal identifiers to species records;
+\item \code{acidBaseEquilibria}: vertical-boundary data;
+\item \code{redoxCouples}: redox half-reaction data.
+\end{itemize}
+
+A species record contains \code{formula}, \code{phase}, \code{oxState}, optional \code{color}, and optional \code{nMetal}. The latter is essential for polynuclear species: \ce{Cr2O7^{2-}} has \code{nMetal=2}; \ce{V4O12^{4-}} has \code{nMetal=4}.
+
+\section{Activities and concentration conventions}
+For every redox or acid/base boundary the engine needs effective activities. Pure solids, liquids, and gases have unit activity. Aqueous species are assigned activities through \key{c convention}. The convention is local to each boundary because a total element concentration must be distributed over the species that define that boundary.
+
+\subsection{Species concentration convention}
+The default convention simply assigns \(a_i=c\) to every aqueous species. It is historically convenient and close to many textbook sketches, but it is not an analytical total concentration.
+
+\subsection{Analytical concentration with equal species concentrations}
+For two aqueous boundary species \(A\) and \(B\), the engine sets \([A]=[B]=c/(\nu_A+\nu_B)\), where \(\nu_i\) is the number of followed-element atoms. This convention is useful when the boundary is described as equality of species concentrations.
+
+\subsection{Analytical concentration with equal element concentrations}
+The engine sets \(\nu_A[A]=\nu_B[B]=c/2\). This is useful when the boundary convention is equality of analytical element amounts on both sides.
+
+\section{Acid/base chains}
+For a fixed oxidation state, the engine extracts active acid/base equilibria and computes their pH values from
+\[
+\pH_b=\frac{pK+n_\mathrm{base}\log a_\mathrm{base}-n_\mathrm{acid}\log a_\mathrm{acid}}{n_{\ce{H}}}.
+\]
+Boundaries are sorted by increasing pH before reduction. This is important: user input does not have to be ordered. Non-monotone chains are reduced by merging adjacent equilibria. The merged boundary represents disappearance of an intermediate acid/base form at the chosen concentration.
+
+\section{Dominant acid/base form}
+At a given pH and oxidation state, the reduced acid/base chain selects one dominant form. For example, in a chain \(\ce{H2S/HS-/S^{2-}}\), the low-pH form is \ce{H2S}, the intermediate form is \ce{HS-}, and the high-pH form is \ce{S^{2-}}. This selection is repeated at all pH samples used by the redox ladder.
+
+\section{Redox ladder and dismutation}
+For a fixed pH, the engine sorts the dominant forms by oxidation state and builds a ladder of stable redox domains. Each new higher oxidation state is accepted only if its transition potential lies above the previous transition. Otherwise the previous state is removed. This is the computational analogue of dismutation or thermodynamic instability of an oxidation state.
+
+The resulting ladder is equivalent to a one-dimensional upper envelope in the potential direction. It determines which species is stable for each interval in E at that pH.
+
+\section{Derived and virtual redox couples}
+Not every visible boundary needs to be explicitly stored. The package distinguishes three cases:
+\begin{enumerate}
+\item Explicit couples supplied with a numerical \code{E0}.
+\item Derived couples supplied with \code{E0=auto}. These are reconstructed by solving a thermodynamic linear graph using the actual acid/base constants and redox standard potentials.
+\item Virtual couples reconstructed when an intermediate species has been removed from the ladder, but the sum of two half-reactions produces a visible boundary.
+\end{enumerate}
+
+The sulfur test is a useful example. After solid sulfur disappears from the redox envelope, visible boundaries involving \ce{HS-} and \ce{S^{2-}} are reconstructed virtually from compatible half-reactions.
+
+\section{Boundary extraction}
+The engine separates chemical existence from geometric visibility. First it samples pH to identify intervals where a given boundary exists chemically. Then the interval endpoints are refined by bisection. Finally, the corresponding straight line is clipped exactly to the rectangle
+\[
+[\pH_{\min},\pH_{\max}]\times[E_{\min},E_{\max}].
+\]
+This avoids the earlier failure mode where a redox line stopped at the last sampled visible point instead of at the exact axis boundary.
+
+\section{Vertical boundaries}
+A vertical acid/base boundary is visible only where the species on the left and the species on the right are globally stable at neighboring pH values. The engine evaluates the limiting redox intervals on both sides of the boundary and intersects them. This prevents vertical boundaries from crossing domains in which neither side is stable.
+
+\section{Label placement}
+Domain labels are placed after the diagram has been computed. The engine samples the plot rectangle on a rectangular grid, groups connected cells with the same stable species, and places one label near each connected component. Formula labels use \pkg{mhchem}; letter labels are sorted from left to right and then from top to bottom. Formula labels can show no phase, all phases, or only phases for neutral species. In \key{domain labels=selected} mode, selected domains use formulas with the chosen phase policy and all other domains use letters; letter labels never carry phase tags.
+
+\section{Accessing numerical boundary data}
+Every drawn diagram is cached under several identifiers: the explicit \key{name}, the element symbol, and a canonical identifier built from element, concentration, and concentration convention. Query macros therefore work in simple cases and in superpositions of the same element at different concentrations.
+
+For a non-vertical boundary, the cached data are slope and intercept in
+\[
+E=m\,\pH+b.
+\]
+For a vertical boundary, the cached data include the constant pH value. \macro{pourbaixGetEquation} formats these values with a chosen number of significant digits.
+
+\section{Template generation and thermodynamic data selection}
+\macro{PourbaixAddTemplate} is a data-entry assistant. Its purpose is not to invent thermodynamic constants, but to determine which constants must be supplied and which ones can be deduced from thermodynamic cycles.
+
+\subsection{Parsing and species normalization}
+The template parser receives a comma-separated list of species. It removes simple \pkg{mhchem} or TeX wrappers, extracts the terminal phase \code{(aq)}, \code{(s)}, \code{(l)}, or \code{(g)}, extracts a terminal ionic charge, counts atoms, and infers the oxidation state of the followed element. The oxidation-state inference assumes \(\ce{O}=-II\), \(\ce{H}=+I\), and ignores other ligand atoms unless the user later corrects the generated declaration.
+
+The parser then writes normalized species declarations. For instance, \code{V4O12^4-} becomes the internal identifier \code{V4O12 4-}, the display formula \code{V_4O_{12}^{4-}}, phase \code{aq}, oxidation state \(+V\), and \code{n metal=4}.
+
+\subsection{Vertical constants}
+For each oxidation state, species are sorted by an acid/base score based mainly on oxygen and hydrogen content. The generator tries to connect neighboring species of the same oxidation state by balanced reactions of the form
+\[
+ n_A A + n_w\ce{H2O} \rightleftharpoons n_B B + n_H\ce{H+}.
+\]
+Each retained edge becomes one independent vertical constant. The log prints both the declaration and the chemical equation, because the numerical constant supplied by the user must correspond to that exact written reaction.
+
+\subsection{Independent redox constants}
+The generator then chooses low-pH redox potentials between consecutive oxidation states. More precisely, it chooses the root species of each acid/base group and connects roots belonging to adjacent oxidation levels. These potentials are the independent redox values requested as \val{E0={TODO}}. This matches the common data situation: one usually knows standard potentials such as \(\ce{Fe^{2+}/Fe}\) and \(\ce{Fe^{3+}/Fe^{2+}}\), rather than all possible cross-potentials.
+
+\subsection{Linear thermodynamic graph}
+The expert model assigns a formal quantity \(g_i\) to each species. It is not an absolute Gibbs energy; it is a convenient linear bookkeeping variable. Each independent acid/base edge contributes an equation
+\[
+ n_B g_B - n_A g_A = \SRT\,pK,
+\]
+and each independent redox edge contributes
+\[
+ n_{\mathrm{ox}}g_{\mathrm{ox}} - n_{\mathrm{red}}g_{\mathrm{red}} = nE^\circ.
+\]
+One species is chosen as reference with \(g=0\). Propagating these equations gives all reachable species as linear combinations of the independent \(pK\) values and independent \(E^\circ\) values.
+
+For any other balanced redox half-reaction, the derived standard potential is then
+\[
+ E^\circ_{\mathrm{derived}} =
+ \frac{n_{\mathrm{ox}}g_{\mathrm{ox}}-n_{\mathrm{red}}g_{\mathrm{red}}}{n}.
+\]
+The template writes such couples with \val{E0=auto}. During plotting, \val{E0=auto} is resolved numerically from the values supplied by the user, including concentration-dependent effective terms when the active concentration convention requires them. If the user possesses a directly tabulated potential for such a derived boundary, they may replace \val{auto} by a numerical value; the engine will then use the supplied value.
+
+\subsection{Selection of emitted couples}
+The default mode \val{redox pairs=dominant} emits couples that can contribute to the stable envelope. Non-adjacent or thermodynamically redundant couples are suppressed unless they are needed as automatic or virtual boundaries. \val{redox pairs=adjacent} is stricter and emits only adjacent oxidation-state pairs. \val{redox pairs=all} is useful for debugging but may produce many redundant declarations.
+
+\subsection{Limitations}
+The template parser is intentionally modest. It handles ordinary formulas such as \ce{Fe(OH)2(s)}, \ce{VO2+}, \ce{Cr2O7^{2-}}, and \ce{V4O12^{4-}}. Complex ligands, hydrates with dots, nonstandard charges, and unusual oxidation-state assignments should be checked manually. The log output is a high-quality starting point, not an oracle.
+
+\section{Lua function reference}
+This section documents every function currently defined in \file{pourbaix.lua}. Public functions are exported as fields of the module table \code{M}; local functions are implementation details but are documented here because they are important for expert review and future maintenance.
+
+\begin{landscape}
+\begingroup
+\scriptsize
+\renewcommand{\tabcolsep}{3pt}
+\begin{longtable}{@{}p{0.06\linewidth}p{0.24\linewidth}p{0.26\linewidth}p{0.14\linewidth}p{0.26\linewidth}@{}}
+\toprule
+\textbf{Scope} & \textbf{Name} & \textbf{Arguments} & \textbf{Return} & \textbf{Principle}\\
+\midrule\endhead
+local & \code{log10} & \code{x} & Number(s) or table & Computes a base-10 logarithm from the natural logarithm.\\
+local & \code{finite} & \code{x} & Boolean & Tests whether a numeric value is neither NaN nor infinite.\\
+local & \code{number} & \code{x, default} & Number(s) or table & Converts an input to a number and falls back to a default.\\
+local & \code{trim} & \code{s} & Value or side effect & Removes leading and trailing white space.\\
+local & \code{truthy} & \code{v, default} & Boolean & Normalizes textual booleans such as true, false, yes, no, on, and off.\\
+local & \code{fmt} & \code{x} & String & Formats a numeric value compactly for generated TeX code.\\
+local & \code{fmt_sig} & \code{x, sig} & String & Formats a numeric value with a requested number of significant figures.\\
+local & \code{letter_name} & \code{n} & Value or side effect & Converts an integer into a lowercase boundary label.\\
+local & \code{upper_letter_name} & \code{n} & Value or side effect & Converts an integer into an uppercase domain label.\\
+local & \code{csv} & \code{list} & Value or side effect & Joins a list into a comma-separated string.\\
+local & \code{shallow_copy} & \code{t} & Value or side effect & Copies one level of a Lua table.\\
+local & \code{list_species} & \code{elementData} & Lua table & Lists species identifiers sorted by oxidation state and identifier.\\
+module & \code{M.active_set} & \code{elementData, speciesList} & Lua table & Builds the set of species that participate in a diagram.\\
+module & \code{M.normalizeConcentrationConvention} & \code{v} & Value or side effect & Maps user-facing concentration-convention names onto internal convention identifiers.\\
+local & \code{metal_count} & \code{species} & Number(s) or table & Returns the number of followed-element atoms carried by a species.\\
+module & \code{M.logActivity} & \code{species, cTrace, convention, partnerSpecies} & Value or side effect & Computes the logarithm of the effective activity used on a boundary.\\
+module & \code{M.reduceAcidBaseChain} & \code{elementData, oxState, cTrace, activeSpeciesSet, convention} & Value or side effect & Builds and reduces a monotone acid/base chain for a fixed oxidation state.\\
+module & \code{M.dominantFormAtOxState} & \code{elementData, oxState, pH, cTrace, activeSpeciesSet, convention} & Value or side effect & Selects the acid/base form stable at a given pH within one oxidation state.\\
+module & \code{M.Eeq} & \code{couple, oxSpecies, redSpecies, pH, cTrace, convention} & Number(s) or table & Evaluates the Nernst line of a redox couple at a given pH.\\
+module & \code{M.redoxLineCoefficients} & \code{couple, oxSpecies, redSpecies, cTrace, convention} & Number(s) or table & Computes slope and intercept for a redox boundary.\\
+local & \code{has_intermediate_oxidation_state} & \code{elementData, oxId, redId} & Boolean & Checks whether an explicitly available oxidation state lies between two species.\\
+module & \code{M.findCouple} & \code{elementData, oxId, redId} & Value or side effect & Looks up an explicit redox couple by oxidized and reduced species identifiers.\\
+module & \code{M._deriveImplicitEeqCouple} & \code{elementData, highId, prevId, ladder, pH, cTrace, convention, activeSpeciesSet} & Value or side effect & Reconstructs a virtual redox boundary through a removed intermediate state.\\
+module & \code{M.buildLadder} & \code{elementData, pH, cTrace, activeSpeciesSet, convention} & Value or side effect & Builds the redox stability ladder at fixed pH by envelope construction.\\
+module & \code{M.dominantSpeciesAt} & \code{elementData, pH, E, cTrace, activeSpeciesSet, convention} & Value or side effect & Returns the globally stable species at a given pH and E.\\
+module & \code{M.default_range} & \code{elementData, range} & Number(s) or table & Combines user range options with element defaults.\\
+local & \code{split_point_groups} & \code{points, dpH} & Parsed value(s) & Splits sampled redox points into contiguous pH groups.\\
+local & \code{couple_signature} & \code{couple} & Value or side effect & Creates a stable string describing a redox couple, including virtual-couple data.\\
+local & \code{redox_frontier_key} & \code{high, low, couple} & Value or side effect & Builds the unique key used to track one redox frontier.\\
+local & \code{has_redox_frontier_at} & \code{elementData, pH, cTrace, activeSpeciesSet, convention, key} & Boolean & Tests whether a tracked redox frontier exists at a given pH.\\
+local & \code{refine_redox_start} & \code{elementData, cTrace, activeSpeciesSet, convention, key, firstPH, pHmin, dpH} & Value or side effect & Refines the left endpoint of a redox existence interval by bisection.\\
+local & \code{refine_redox_end} & \code{elementData, cTrace, activeSpeciesSet, convention, key, lastPH, pHmax, dpH} & Value or side effect & Refines the right endpoint of a redox existence interval by bisection.\\
+local & \code{redox_threshold_at} & \code{elementData, couple, pH, cTrace, convention, fallback} & Value or side effect & Evaluates a redox threshold from its couple, with a fallback value.\\
+local & \code{ladder_intervals_at} & \code{elementData, pHForForms, pHForValues, cTrace, activeSpeciesSet, convention} & Value or side effect & Converts a ladder into potential intervals for the stable forms.\\
+local & \code{vertical_frontier_segments} & \code{elementData, eq, pHb, cTrace, activeSpeciesSet, range, dpH, convention} & Value or side effect & Computes the visible E-intervals of a vertical acid/base boundary.\\
+local & \code{clip_segment_to_rect} & \code{x1, y1, x2, y2, xmin, xmax, ymin, ymax} & Value or side effect & Clips a straight segment to the rectangular plotting window.\\
+module & \code{M.computeFrontiers} & \code{elementData, cTrace, activeSpeciesSet, range, dpH, convention} & Boundary table & Computes all visible redox and vertical frontiers for one diagram.\\
+module & \code{M.waterFrontiers} & \code{pO2, pH2} & Boundary table & Returns the two water-stability lines for a chosen gas-pressure preset.\\
+module & \code{M.mhchem_formula} & \code{formula} & Value or side effect & Converts an internal formula into mhchem syntax.\\
+module & \code{M.label_text} & \code{elementData, id, showPhase} & String & Builds the TeX label for a species, optionally with a phase tag.\\
+local & \code{canonical_domain_id_text} & \code{s} & String & Normalizes a user-written species name for selected-domain labels.\\
+local & \code{split_selected_domain_list} & \code{s} & Parsed value(s) & Splits the selected-domain list while respecting braces and parentheses.\\
+local & \code{selected_domain_set} & \code{elementData, elementSymbol, list} & Lua table & Builds the set of domains selected for formula labels.\\
+module & \code{M.label_positions} & \code{elementData, cTrace, activeSet, range, nx, ny, minCells, convention} & Lua table & Samples the diagram and places domain labels by connected components.\\
+module & \code{M.annotateFrontiers} & \code{elementData, cTrace, fr, convention} & Boundary table & Assigns visible names and cached metadata to frontiers.\\
+local & \code{canonical_registry_id} & \code{element, cTrace, convention} & String & Builds the canonical registry id from element, concentration, and convention.\\
+local & \code{parse_registry_selector} & \code{sel} & Parsed value(s) & Parses the optional selector used by numerical query macros.\\
+module & \code{M.storeFrontierRegistry} & \code{id, element, cTrace, fr, byName, convention} & Value or side effect & Stores boundary metadata under name, element, and canonical identifiers.\\
+local & \code{registry_entry} & \code{id} & Value or side effect & Retrieves the cached frontier registry entry matching a selector.\\
+local & \code{registry_value} & \code{entry, name, field} & Value or side effect & Reads one numeric field from one registered boundary.\\
+module & \code{M.tex_get_value} & \code{id, name, field, sig} & TeX output or side effect & TeX bridge for slope, intercept, or pH queries.\\
+module & \code{M.tex_get_equation} & \code{id, name, sig} & TeX output or side effect & TeX bridge formatting a boundary equation.\\
+local & \code{append_unique} & \code{list, labels, value, label, tol} & Value or side effect & Appends a tick value unless an existing value is already within tolerance.\\
+module & \code{M.tex_reset_axis_ticks} & \code{} & TeX output or side effect & Clears the accumulated extra tick cache for a new axis.\\
+local & \code{merge_ticks} & \code{dst_values, dst_labels, src_values, src_labels} & Lua table & Merges tick values and labels into the current axis cache.\\
+local & \code{emit_extra_ticks} & \code{axis, values, labels} & Side effect & Writes pgfplots extra tick options for one axis direction.\\
+local & \code{emit_current_axis_extra_ticks} & \code{new_x_values, new_x_labels, new_y_values, new_y_labels} & Side effect & Emits accumulated extra x and extra y tick options.\\
+local & \code{tex_escape_message} & \code{s} & TeX output or side effect & Escapes text for diagnostic messages sent through TeX.\\
+local & \code{lua_warn} & \code{msg} & Side effect & Writes a package warning from Lua.\\
+local & \code{lua_info} & \code{msg} & Side effect & Writes an informational message from Lua.\\
+module & \code{M.available_elements} & \code{} & Value or side effect & Lists built-in or user-declared element symbols.\\
+module & \code{M.available_elements_string} & \code{} & String & Formats the available-element list as a string.\\
+local & \code{ensure_element} & \code{symbol} & Value or side effect & Creates an element table if needed and returns it.\\
+local & \code{parse_optional_number} & \code{v} & Parsed value(s) & Parses an optional numeric key; empty values yield nil.\\
+local & \code{parse_required_number} & \code{v, default} & Parsed value(s) & Parses a required numeric key and falls back to a default.\\
+module & \code{M.declare_element} & \code{spec} & Boolean or status information & Adds or updates an element metadata record.\\
+module & \code{M.add_species} & \code{elementSymbol, spec} & Boolean or status information & Adds one species record to an element.\\
+module & \code{M.add_acid_base} & \code{elementSymbol, eq} & Boolean or status information & Adds one acid/base equilibrium to an element.\\
+module & \code{M.add_redox} & \code{elementSymbol, couple} & Boolean or status information & Adds one redox couple, including numerical or automatic E0 handling.\\
+local & \code{merge_element} & \code{dst, src} & Lua table & Merges one element data table into another.\\
+module & \code{M.merge_data} & \code{tbl} & Lua table & Merges a user data table into the main database.\\
+module & \code{M.load_user_data} & \code{filename} & Boolean or status information & Loads a Lua file returning user thermodynamic data.\\
+module & \code{M.validate_element} & \code{symbol} & Boolean or status information & Checks the internal consistency of an element data record.\\
+module & \code{M.tex_validate_element} & \code{symbol} & TeX output or side effect & TeX bridge for validation diagnostics.\\
+local & \code{dump_value} & \code{v, indent, seen} & Value or side effect & Serializes a Lua value recursively for log inspection.\\
+module & \code{M.tex_show_element_data} & \code{symbol} & TeX output or side effect & Writes the normalized element data table to the log.\\
+local & \code{gcd_int} & \code{a, b} & Value or side effect & Computes an integer greatest common divisor.\\
+local & \code{lcm_int} & \code{a, b} & Value or side effect & Computes an integer least common multiple.\\
+local & \code{split_top_level_commas} & \code{s} & Parsed value(s) & Splits a comma list without breaking groups or parentheses.\\
+local & \code{parse_charge} & \code{raw} & Parsed value(s) & Parses a terminal ionic charge.\\
+local & \code{strip_tex_formula} & \code{s} & Value or side effect & Removes simple TeX and mhchem markup from a formula string.\\
+local & \code{split_phase_and_charge} & \code{raw, default_phase} & Parsed value(s) & Extracts phase and charge from a template species.\\
+local & \code{parse_atom_counts} & \code{formula} & Parsed value(s) & Counts atoms in a formula, including parenthesized groups.\\
+local & \code{infer_oxidation_state} & \code{element, counts, charge} & Inferred record or nil & Infers the oxidation state of the followed element from atom counts and charge.\\
+local & \code{latex_formula_from_core} & \code{core, charge_label} & Value or side effect & Builds a display formula with TeX subscripts and superscripts.\\
+local & \code{id_from_core} & \code{element, core, charge_label} & Value or side effect & Builds the internal species identifier from formula core and charge.\\
+local & \code{parse_template_species} & \code{raw, element, default_phase} & Parsed value(s) & Parses one species supplied to the template generator.\\
+local & \code{infer_element_from_species} & \code{items} & Inferred record or nil & Chooses a likely followed element from a species list.\\
+local & \code{fmt_int_or_num} & \code{x} & String & Formats an integer-like coefficient without a decimal point.\\
+local & \code{command_quote_id} & \code{id} & Value or side effect & Adds braces around an identifier when TeX key syntax requires it.\\
+local & \code{template_line} & \code{line} & Side effect & Writes one line of generated template code to the terminal and log.\\
+local & \code{species_label} & \code{sp} & String & Returns a compact label for a template species.\\
+local & \code{species_equation_label} & \code{sp, with_phase} & String & Formats a species for a generated chemical equation.\\
+local & \code{term_for_equation} & \code{coef, label} & Value or side effect & Formats one stoichiometric term in a generated equation.\\
+local & \code{join_equation_terms} & \code{terms} & Value or side effect & Joins nonzero equation terms with plus signs.\\
+local & \code{acid_base_equation_text} & \code{ab} & String & Builds the text of a generated acid/base equation.\\
+local & \code{redox_equation_text} & \code{r} & String & Builds the text of a generated redox half-equation.\\
+local & \code{ab_label} & \code{ab} & String & Builds the symbolic label of an acid/base constant.\\
+local & \code{redox_label} & \code{r} & String & Builds the symbolic label of a redox potential.\\
+local & \code{infer_acid_base} & \code{a, b} & Inferred record or nil & Balances an acid/base equilibrium between two same-oxidation-state species.\\
+local & \code{infer_redox} & \code{ox, red} & Inferred record or nil & Balances a redox half-reaction between two species.\\
+local & \code{emit_keyval_command} & \code{name, parts} & Side effect & Writes a generated pgfkeys-style command block.\\
+local & \code{emit_species_template} & \code{element, sp} & Side effect & Writes a generated species declaration.\\
+local & \code{emit_acidbase_template} & \code{element, ab, pka_text} & Side effect & Writes a generated acid/base declaration and its equation comment.\\
+local & \code{emit_redox_template} & \code{element, r, e0_text, note} & Side effect & Writes a generated redox declaration and its half-equation comment.\\
+local & \code{expr_zero} & \code{} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{expr_const} & \code{c} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{expr_var} & \code{name} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{expr_clone} & \code{a} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{expr_add} & \code{a,b} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{expr_sub} & \code{a,b} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+global & \code{expr_scale} & \code{a, s} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{expr_eval} & \code{a, values} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{fmt_coef} & \code{x} & String & Formats a coefficient in a symbolic linear expression.\\
+local & \code{expr_format} & \code{a} & Linear expression or number & Manipulates linear expressions in independent pK and E0 variables.\\
+local & \code{pair_key} & \code{a,b} & Value or side effect & Builds a stable key for a pair of template species.\\
+local & \code{acid_base_score} & \code{sp} & Value or side effect & Scores species by oxygen and hydrogen content to sort acid/base forms.\\
+local & \code{build_acid_base_forest} & \code{species} & Lua table & Builds the acid/base spanning forest used to select independent vertical constants.\\
+local & \code{add_ab_equation} & \code{eqs, ab} & Value or side effect & Adds an acid/base linear equation to the template graph.\\
+local & \code{add_redox_equation} & \code{eqs, r, label} & Value or side effect & Adds a redox linear equation to the template graph.\\
+local & \code{solve_g_expressions} & \code{species, ab_edges, independent_redox} & Value or side effect & Solves symbolic species free-energy expressions from the independent graph.\\
+local & \code{build_independent_redox} & \code{species, forest} & Lua table & Selects low-pH redox potentials between consecutive oxidation states.\\
+local & \code{should_emit_redox_pair} & \code{mode, forest, high, low, adjacentOx} & Value or side effect & Decides whether a template redox pair should be emitted.\\
+local & \code{find_database_redox_E0} & \code{elementSymbol, ox, red} & Record or nil & Looks up a database E0 used for template self-checks.\\
+local & \code{find_database_pKa} & \code{elementSymbol, acid, base} & Record or nil & Looks up a database pK value used for template self-checks.\\
+local & \code{build_runtime_species_objects} & \code{elementSymbol, elementData} & Lua table & Reconstructs template-like species records from runtime element data.\\
+local & \code{solve_effective_species_g} & \code{elementSymbol, elementData, cTrace, convention} & Value or side effect & Solves numerical species free-energy values with concentration-dependent terms.\\
+local & \code{add_missing_adjacent_auto_couples} & \code{elementData, elementSymbol} & Value or side effect & Adds automatic adjacent couples needed by the redox ladder.\\
+module & \code{M.resolve_auto_redox_E0s} & \code{elementData, elementSymbol, cTrace, convention} & Value or side effect & Resolves E0=auto couples before plotting, using current c and convention.\\
+module & \code{M.tex_add_template} & \code{opts} & TeX output or side effect & TeX bridge for writing the template-generated skeleton to the log.\\
+local & \code{tex_bool} & \code{v, default} & TeX output or side effect & Normalizes TeX boolean key values.\\
+local & \code{get_range_from_opts} & \code{elementData, opts} & Value or side effect & Builds the computational range from addPourbaix options.\\
+local & \code{sanitize_color} & \code{c} & Value or side effect & Sanitizes color strings for generated TeX code.\\
+module & \code{M.tex_add_pourbaix} & \code{opts} & TeX output or side effect & Main TeX bridge: computes and emits the pgfplots drawing code.\\
+\bottomrule
+\end{longtable}
+\endgroup
+\end{landscape}
+
+
+\section{Design choices}
+\begin{itemize}
+\item Public syntax is pgfkeys-based because it is familiar in TikZ/pgfplots workflows.
+\item Lua owns the chemistry and numerical work.
+\item pgfplots is used only as a high-quality rendering backend.
+\item Boundaries are straight segments; two points are sufficient.
+\item Labels and ticks are optional annotations; they do not affect thermodynamic construction.
+\item User-defined data are merged with the built-in database, but the built-in table remains ordinary Lua data.
+\end{itemize}
+
+\section{License, acknowledgments, and disclaimer}
+This work may be distributed and/or modified under the conditions of the LaTeX Project Public License, either version 1.3c of this license or, at your option, any later version. The work has the LPPL maintenance status ``maintained''. The Current Maintainer is Christophe Jorssen.
+
+The first exploratory stage of this package was informed by the interactive web animation by Thomas Roy, available at \url{https://phyzik.store/?anim=pourbaix}. In particular, the contents of \file{pourbaix-data.lua} originate, in the early development versions, from a raw extraction of Thomas Roy's thermodynamic dataset and species definitions. The public package architecture, Lua engine, pgfplots interface, and documentation were then reworked into the present \pkg{pourbaix} package.
+
+Development disclaimer: this package was ``vibe-coded'' by Christophe Jorssen\linebreak(\href{mailto:christophe.jorssen@gmail.com}{\nolinkurl{christophe.jorssen@gmail.com}}) with the assistance of ChatGPT 5.5. The package is intended as a technical and pedagogical tool. Users should verify thermodynamic data, concentration conventions, and generated diagrams for their intended use.
+
+\end{document}

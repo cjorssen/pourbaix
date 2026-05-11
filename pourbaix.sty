@@ -1,0 +1,416 @@
+%% pourbaix.sty -- LuaLaTeX/pgfplots Pourbaix diagrams.
+%% Version: 1.0 (2026-05-10).
+%% License: LaTeX Project Public License v1.3c or later.
+%% Maintainer: Christophe Jorssen <christophe.jorssen@gmail.com>.
+%%
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{pourbaix}[2026/05/10 v1.0 Pourbaix diagrams with LuaLaTeX and pgfplots]
+
+\RequirePackage{iftex}
+\ifLuaTeX\else
+  \PackageError{pourbaix}{This package requires LuaLaTeX}{Compile the document with LuaLaTeX.}
+\fi
+
+\RequirePackage{pgfplots}
+\RequirePackage{pgfkeys}
+\RequirePackage{xparse}
+\RequirePackage{etoolbox}
+\RequirePackage[version=4]{mhchem}
+
+\pgfplotsset{compat=1.18}
+
+% pgfplots extra ticks are current-axis options.
+% Reset the Lua cache at the beginning of each axis so overlaid diagrams
+% accumulate their ticks without leaking state to the next axis.
+\AtBeginEnvironment{axis}{\directlua{require("pourbaix").tex_reset_axis_ticks()}}
+
+\tikzset{
+  pourbaix label/.style={
+    font=\scriptsize,
+    fill=white,
+    fill opacity=.78,
+    text opacity=1,
+    inner sep=1.3pt,
+    rounded corners=1pt
+  },
+  pourbaix frontier label/.style={
+    fill=white,
+    draw,
+    circle,
+    pos=.5,
+    inner sep=1pt,
+    font=\scriptsize
+  },
+  pourbaix water label/.style={
+    font=\scriptsize,
+    fill=white,
+    inner sep=1pt
+  }
+}
+
+\pgfplotsset{
+  pourbaix axis/.style={
+    xlabel={pH},
+    ylabel={$E\,/\,\mathrm{V}$},
+    xmin=0,
+    xmax=14,
+    grid=both,
+    minor tick num=1,
+    axis line style={black!60},
+    tick style={black!60}
+  }
+}
+
+\pgfkeys{
+  /pourbaix/.is family,
+  /pourbaix,
+  element/.initial=Fe,
+  c/.initial=1e-2,
+  cconvention/.initial=species,
+  color/.initial=black,
+  species/.initial=all,
+  pHmin/.initial=0,
+  pHmax/.initial=14,
+  Emin/.initial=auto,
+  Emax/.initial=auto,
+  dpH/.initial=0.02,
+  labels/.initial=true,
+  domainlabels/.initial=formula,
+  selecteddomains/.initial=,
+  selecteddomainphase/.initial=,
+  labelphase/.initial=neutral,
+  labelnx/.initial=64,
+  labelny/.initial=64,
+  labelstyle/.initial=pourbaix label,
+  frontierlabels/.initial=false,
+  frontierlabelstyle/.initial=pourbaix frontier label,
+  frontierredoxlabels/.initial=true,
+  frontierverticallabels/.initial=true,
+  extraverticalticks/.initial=false,
+  extrahorizontalticks/.initial=false,
+  ticksigfigs/.initial=4,
+  extraxtickstyle/.initial=,
+  extraytickstyle/.initial=,
+  id/.initial=,
+  linewidth/.initial=0.6pt,
+  bbox/.initial=true,
+  forgetplot/.initial=true,
+  water/.initial=false,
+  waterpreset/.initial=aere,
+  waterstyle/.initial={draw=black!45, densely dashed, line width=0.45pt, mark=none},
+  waterlabels/.initial=false,
+  waterlabelstyle/.initial=pourbaix water label,
+  waterlabeloffset/.initial=0.06,
+  waterlabelpHlow/.initial=,
+  waterlabelpHhigh/.initial=,
+  waterloweroxidantlabel/.initial={H+},
+  waterlowerreductantlabel/.initial={H2(aq)},
+  waterupperoxidantlabel/.initial={O2(aq)},
+  waterupperreductantlabel/.initial={H2O},
+  name/.code={\pgfkeyssetvalue{/pourbaix/id}{#1}},
+  c convention/.code={\pgfkeyssetvalue{/pourbaix/cconvention}{#1}},
+  concentration convention/.code={\pgfkeyssetvalue{/pourbaix/cconvention}{#1}},
+  frontier labels/.code={\pgfkeyssetvalue{/pourbaix/frontierlabels}{#1}},
+  frontier label style/.code={\pgfkeyssetvalue{/pourbaix/frontierlabelstyle}{#1}},
+  frontier redox labels/.code={\pgfkeyssetvalue{/pourbaix/frontierredoxlabels}{#1}},
+  frontier vertical labels/.code={\pgfkeyssetvalue{/pourbaix/frontierverticallabels}{#1}},
+  extra x ticks/.code={\pgfkeyssetvalue{/pourbaix/extraverticalticks}{#1}},
+  extra vertical ticks/.code={\pgfkeyssetvalue{/pourbaix/extraverticalticks}{#1}},
+  extra y ticks/.code={\pgfkeyssetvalue{/pourbaix/extrahorizontalticks}{#1}},
+  extra horizontal ticks/.code={\pgfkeyssetvalue{/pourbaix/extrahorizontalticks}{#1}},
+  tick sig figs/.code={\pgfkeyssetvalue{/pourbaix/ticksigfigs}{#1}},
+  tick significant figures/.code={\pgfkeyssetvalue{/pourbaix/ticksigfigs}{#1}},
+  extra x tick style/.code={\pgfkeyssetvalue{/pourbaix/extraxtickstyle}{#1}},
+  extra y tick style/.code={\pgfkeyssetvalue{/pourbaix/extraytickstyle}{#1}},
+  domain labels/.code={\pgfkeyssetvalue{/pourbaix/domainlabels}{#1}},
+  domain label mode/.code={\pgfkeyssetvalue{/pourbaix/domainlabels}{#1}},
+  domain label style/.code={\pgfkeyssetvalue{/pourbaix/labelstyle}{#1}},
+  selected domains/.code={\pgfkeyssetvalue{/pourbaix/selecteddomains}{#1}},
+  selected domain phase/.code={\pgfkeyssetvalue{/pourbaix/selecteddomainphase}{#1}},
+  selected domains phase/.code={\pgfkeyssetvalue{/pourbaix/selecteddomainphase}{#1}},
+  label phase/.code={\pgfkeyssetvalue{/pourbaix/labelphase}{#1}},
+  domain label phase/.code={\pgfkeyssetvalue{/pourbaix/labelphase}{#1}},
+  domain labels phase/.code={\pgfkeyssetvalue{/pourbaix/labelphase}{#1}},
+  domain label phase/.code={\pgfkeyssetvalue{/pourbaix/labelphase}{#1}},
+  domain labels phase/.code={\pgfkeyssetvalue{/pourbaix/labelphase}{#1}},
+  label nx/.code={\pgfkeyssetvalue{/pourbaix/labelnx}{#1}},
+  label ny/.code={\pgfkeyssetvalue{/pourbaix/labelny}{#1}},
+  label style/.code={\pgfkeyssetvalue{/pourbaix/labelstyle}{#1}},
+  line width/.code={\pgfkeyssetvalue{/pourbaix/linewidth}{#1}},
+  forget plot/.code={\pgfkeyssetvalue{/pourbaix/forgetplot}{#1}},
+  water preset/.code={\pgfkeyssetvalue{/pourbaix/waterpreset}{#1}},
+  water style/.code={\pgfkeyssetvalue{/pourbaix/waterstyle}{#1}},
+  water labels/.code={\pgfkeyssetvalue{/pourbaix/waterlabels}{#1}},
+  water label style/.code={\tikzset{pourbaix water label/.style={#1}}\pgfkeyssetvalue{/pourbaix/waterlabelstyle}{pourbaix water label}},
+  water label offset/.code={\pgfkeyssetvalue{/pourbaix/waterlabeloffset}{#1}},
+  water label pH low/.code={\pgfkeyssetvalue{/pourbaix/waterlabelpHlow}{#1}},
+  water label pH high/.code={\pgfkeyssetvalue{/pourbaix/waterlabelpHhigh}{#1}},
+  water label pH left/.code={\pgfkeyssetvalue{/pourbaix/waterlabelpHlow}{#1}},
+  water label pH right/.code={\pgfkeyssetvalue{/pourbaix/waterlabelpHhigh}{#1}},
+  water lower oxidant label/.code={\pgfkeyssetvalue{/pourbaix/waterloweroxidantlabel}{#1}},
+  water lower reductant label/.code={\pgfkeyssetvalue{/pourbaix/waterlowerreductantlabel}{#1}},
+  water upper oxidant label/.code={\pgfkeyssetvalue{/pourbaix/waterupperoxidantlabel}{#1}},
+  water upper reductant label/.code={\pgfkeyssetvalue{/pourbaix/waterupperreductantlabel}{#1}},
+  water H+ label/.code={\pgfkeyssetvalue{/pourbaix/waterloweroxidantlabel}{#1}},
+  water H2 label/.code={\pgfkeyssetvalue{/pourbaix/waterlowerreductantlabel}{#1}},
+  water O2 label/.code={\pgfkeyssetvalue{/pourbaix/waterupperoxidantlabel}{#1}},
+  water H2O label/.code={\pgfkeyssetvalue{/pourbaix/waterupperreductantlabel}{#1}}
+}
+
+
+% ---------------------------------------------------------------------------
+% Declarative interface for extending the thermodynamic database.
+% Public macros remain pgfkeys-based; Lua receives normalized tables
+% compatible with pourbaix-data.lua.
+% ---------------------------------------------------------------------------
+
+\pgfkeys{
+  /pourbaix/declareelement/.is family,
+  /pourbaix/declareelement,
+  symbol/.initial=,
+  element/.initial=,
+  id/.initial=,
+  name/.initial=,
+  metal/.initial=,
+  Emin/.initial=,
+  Emax/.initial=,
+  E min/.code={\pgfkeyssetvalue{/pourbaix/declareelement/Emin}{#1}},
+  E max/.code={\pgfkeyssetvalue{/pourbaix/declareelement/Emax}{#1}}
+}
+
+\pgfkeys{
+  /pourbaix/speciesdata/.is family,
+  /pourbaix/speciesdata,
+  element/.initial=,
+  id/.initial=,
+  formula/.initial=,
+  phase/.initial=aq,
+  oxstate/.initial=,
+  color/.initial=,
+  nmetal/.initial=1,
+  ox state/.code={\pgfkeyssetvalue{/pourbaix/speciesdata/oxstate}{#1}},
+  ox/.code={\pgfkeyssetvalue{/pourbaix/speciesdata/oxstate}{#1}},
+  n metal/.code={\pgfkeyssetvalue{/pourbaix/speciesdata/nmetal}{#1}}
+}
+
+\pgfkeys{
+  /pourbaix/acidbase/.is family,
+  /pourbaix/acidbase,
+  element/.initial=,
+  acid/.initial=,
+  base/.initial=,
+  nH/.initial=1,
+  nH2O/.initial=0,
+  pKa/.initial=,
+  nAcid/.initial=1,
+  nBase/.initial=1,
+  side acid/.code={\pgfkeyssetvalue{/pourbaix/acidbase/acid}{#1}},
+  side base/.code={\pgfkeyssetvalue{/pourbaix/acidbase/base}{#1}},
+  n acid/.code={\pgfkeyssetvalue{/pourbaix/acidbase/nAcid}{#1}},
+  n base/.code={\pgfkeyssetvalue{/pourbaix/acidbase/nBase}{#1}},
+  pka/.code={\pgfkeyssetvalue{/pourbaix/acidbase/pKa}{#1}},
+  n water/.code={\pgfkeyssetvalue{/pourbaix/acidbase/nH2O}{#1}}
+}
+
+\pgfkeys{
+  /pourbaix/redox/.is family,
+  /pourbaix/redox,
+  element/.initial=,
+  ox/.initial=,
+  red/.initial=,
+  E0/.initial=,
+  n/.initial=1,
+  nH/.initial=0,
+  nH2O/.initial=0,
+  nOx/.initial=1,
+  nRed/.initial=1,
+  nHright/.initial=0,
+  nH2Oleft/.initial=0,
+  E standard/.code={\pgfkeyssetvalue{/pourbaix/redox/E0}{#1}},
+  E^0/.code={\pgfkeyssetvalue{/pourbaix/redox/E0}{#1}},
+  n ox/.code={\pgfkeyssetvalue{/pourbaix/redox/nOx}{#1}},
+  n red/.code={\pgfkeyssetvalue{/pourbaix/redox/nRed}{#1}},
+  nH right/.code={\pgfkeyssetvalue{/pourbaix/redox/nHright}{#1}},
+  n h right/.code={\pgfkeyssetvalue{/pourbaix/redox/nHright}{#1}},
+  nH2O left/.code={\pgfkeyssetvalue{/pourbaix/redox/nH2Oleft}{#1}},
+  n water/.code={\pgfkeyssetvalue{/pourbaix/redox/nH2O}{#1}},
+  n water left/.code={\pgfkeyssetvalue{/pourbaix/redox/nH2Oleft}{#1}}
+}
+
+\NewDocumentCommand { \PourbaixDeclareElement } { O{} }
+  {\begingroup
+    \pgfkeys{/pourbaix/declareelement/.cd,symbol=,element=,id=,name=,metal=,Emin=,Emax=,#1}%
+    \directlua{require("pourbaix").declare_element({
+      symbol = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/symbol}}",
+      element = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/element}}",
+      id = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/id}}",
+      name = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/name}}",
+      metal = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/metal}}",
+      Emin = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/Emin}}",
+      Emax = "\luaescapestring{\pgfkeysvalueof{/pourbaix/declareelement/Emax}}"
+    })}%
+   \endgroup}
+
+\NewDocumentCommand { \PourbaixAddSpecies } { O{} }
+  {\begingroup
+    \pgfkeys{/pourbaix/speciesdata/.cd,element=,id=,formula=,phase=aq,oxstate=,color=,nmetal=1,#1}%
+    \directlua{require("pourbaix").add_species("\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/element}}",{
+      id = "\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/id}}",
+      formula = "\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/formula}}",
+      phase = "\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/phase}}",
+      oxState = "\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/oxstate}}",
+      color = "\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/color}}",
+      nMetal = "\luaescapestring{\pgfkeysvalueof{/pourbaix/speciesdata/nmetal}}"
+    })}%
+   \endgroup}
+
+\NewDocumentCommand { \PourbaixAddAcidBase } { O{} }
+  {\begingroup
+    \pgfkeys{/pourbaix/acidbase/.cd,element=,acid=,base=,nH=1,nH2O=0,pKa=,nAcid=1,nBase=1,#1}%
+    \directlua{require("pourbaix").add_acid_base("\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/element}}",{
+      acid = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/acid}}",
+      base = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/base}}",
+      nH = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/nH}}",
+      nH2O = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/nH2O}}",
+      pKa = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/pKa}}",
+      nAcid = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/nAcid}}",
+      nBase = "\luaescapestring{\pgfkeysvalueof{/pourbaix/acidbase/nBase}}"
+    })}%
+   \endgroup}
+
+\NewDocumentCommand { \PourbaixAddRedox } { O{} }
+  {\begingroup
+    \pgfkeys{/pourbaix/redox/.cd,element=,ox=,red=,E0=,n=1,nH=0,nH2O=0,nOx=1,nRed=1,nHright=0,nH2Oleft=0,#1}%
+    \directlua{require("pourbaix").add_redox("\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/element}}",{
+      ox = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/ox}}",
+      red = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/red}}",
+      E0 = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/E0}}",
+      n = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/n}}",
+      nH = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/nH}}",
+      nH2O = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/nH2O}}",
+      nOx = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/nOx}}",
+      nRed = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/nRed}}",
+      nH_right = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/nHright}}",
+      nH2O_left = "\luaescapestring{\pgfkeysvalueof{/pourbaix/redox/nH2Oleft}}"
+    })}%
+   \endgroup}
+
+
+\pgfkeys{
+  /pourbaix/template/.is family,
+  /pourbaix/template,
+  element/.initial=,
+  symbol/.initial=,
+  name/.initial=,
+  metal/.initial=,
+  redox pairs/.initial=dominant,
+  acid base/.initial=true,
+  redox/.initial=true,
+  comments/.initial=true,
+  phase default/.initial=aq,
+  check database/.initial=true
+}
+
+\NewDocumentCommand { \PourbaixAddTemplate } { O{} m }
+  {\begingroup
+    \pgfkeys{/pourbaix/template/.cd,element=,symbol=,name=,metal=,redox pairs=dominant,acid base=true,redox=true,comments=true,phase default=aq,check database=true,#1}%
+    \directlua{require("pourbaix").tex_add_template({
+      element = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/element}}",
+      symbol = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/symbol}}",
+      name = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/name}}",
+      metal = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/metal}}",
+      redox_pairs = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/redox pairs}}",
+      acid_base = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/acid base}}",
+      redox = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/redox}}",
+      comments = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/comments}}",
+      phase_default = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/phase default}}",
+      check_database = "\luaescapestring{\pgfkeysvalueof{/pourbaix/template/check database}}",
+      species = "\luaescapestring{#2}"
+    })}%
+   \endgroup}
+
+\NewDocumentCommand { \PourbaixLoadData } { m }
+  {\InputIfFileExists{#1}{}{\PackageError{pourbaix}{Data file not found: #1}{Check the file path.}}}
+
+\NewDocumentCommand { \PourbaixLoadLuaData } { m }
+  {\directlua{require("pourbaix").load_user_data("\luaescapestring{#1}")}}
+
+\NewDocumentCommand { \PourbaixValidateElement } { m }
+  {\directlua{require("pourbaix").tex_validate_element("\luaescapestring{#1}")}}
+
+\NewDocumentCommand { \PourbaixShowElementData } { m }
+  {\directlua{require("pourbaix").tex_show_element_data("\luaescapestring{#1}")}}
+
+\ExplSyntaxOn
+\NewDocumentCommand { \addPourbaix } { O{} t; }
+  {
+    \pgfkeys{/pourbaix/.cd,#1}
+    \pgfkeysgetvalue{/pourbaix/extraxtickstyle}{\pbxExtraXTickStyle}
+    \pgfkeysgetvalue{/pourbaix/extraytickstyle}{\pbxExtraYTickStyle}
+    \pgfkeysgetvalue{/pourbaix/waterlabelstyle}{\pbxWaterLabelStyle}
+    \pgfkeysgetvalue{/pourbaix/waterloweroxidantlabel}{\pbxWaterLowerOxidantLabel}
+    \pgfkeysgetvalue{/pourbaix/waterlowerreductantlabel}{\pbxWaterLowerReductantLabel}
+    \pgfkeysgetvalue{/pourbaix/waterupperoxidantlabel}{\pbxWaterUpperOxidantLabel}
+    \pgfkeysgetvalue{/pourbaix/waterupperreductantlabel}{\pbxWaterUpperReductantLabel}
+    \directlua{
+      require("pourbaix").tex_add_pourbaix({
+        element      = "\luaescapestring{\pgfkeysvalueof{/pourbaix/element}}",
+        c            = "\luaescapestring{\pgfkeysvalueof{/pourbaix/c}}",
+        c_convention = "\luaescapestring{\pgfkeysvalueof{/pourbaix/cconvention}}",
+        color        = "\luaescapestring{\pgfkeysvalueof{/pourbaix/color}}",
+        species      = "\luaescapestring{\pgfkeysvalueof{/pourbaix/species}}",
+        pHmin        = "\luaescapestring{\pgfkeysvalueof{/pourbaix/pHmin}}",
+        pHmax        = "\luaescapestring{\pgfkeysvalueof{/pourbaix/pHmax}}",
+        Emin         = "\luaescapestring{\pgfkeysvalueof{/pourbaix/Emin}}",
+        Emax         = "\luaescapestring{\pgfkeysvalueof{/pourbaix/Emax}}",
+        dpH          = "\luaescapestring{\pgfkeysvalueof{/pourbaix/dpH}}",
+        labels       = "\luaescapestring{\pgfkeysvalueof{/pourbaix/labels}}",
+        domain_labels = "\luaescapestring{\pgfkeysvalueof{/pourbaix/domainlabels}}",
+        selected_domains = "\luaescapestring{\pgfkeysvalueof{/pourbaix/selecteddomains}}",
+        selected_domain_phase = "\luaescapestring{\pgfkeysvalueof{/pourbaix/selecteddomainphase}}",
+        label_phase  = "\luaescapestring{\pgfkeysvalueof{/pourbaix/labelphase}}",
+        label_nx     = "\luaescapestring{\pgfkeysvalueof{/pourbaix/labelnx}}",
+        label_ny     = "\luaescapestring{\pgfkeysvalueof{/pourbaix/labelny}}",
+        label_style  = "\luaescapestring{\pgfkeysvalueof{/pourbaix/labelstyle}}",
+        frontier_labels          = "\luaescapestring{\pgfkeysvalueof{/pourbaix/frontierlabels}}",
+        frontier_label_style     = "\luaescapestring{\pgfkeysvalueof{/pourbaix/frontierlabelstyle}}",
+        frontier_redox_labels    = "\luaescapestring{\pgfkeysvalueof{/pourbaix/frontierredoxlabels}}",
+        frontier_vertical_labels = "\luaescapestring{\pgfkeysvalueof{/pourbaix/frontierverticallabels}}",
+        extra_x_ticks            = "\luaescapestring{\pgfkeysvalueof{/pourbaix/extraverticalticks}}",
+        extra_y_ticks            = "\luaescapestring{\pgfkeysvalueof{/pourbaix/extrahorizontalticks}}",
+        tick_sig_figs            = "\luaescapestring{\pgfkeysvalueof{/pourbaix/ticksigfigs}}",
+        extra_x_tick_style       = "\luaescapestring{\unexpanded\expandafter{\pbxExtraXTickStyle}}",
+        extra_y_tick_style       = "\luaescapestring{\unexpanded\expandafter{\pbxExtraYTickStyle}}",
+        id                       = "\luaescapestring{\pgfkeysvalueof{/pourbaix/id}}",
+        line_width   = "\luaescapestring{\pgfkeysvalueof{/pourbaix/linewidth}}",
+        bbox         = "\luaescapestring{\pgfkeysvalueof{/pourbaix/bbox}}",
+        forget_plot  = "\luaescapestring{\pgfkeysvalueof{/pourbaix/forgetplot}}",
+        water        = "\luaescapestring{\pgfkeysvalueof{/pourbaix/water}}",
+        water_preset = "\luaescapestring{\pgfkeysvalueof{/pourbaix/waterpreset}}",
+        water_style  = "\luaescapestring{\pgfkeysvalueof{/pourbaix/waterstyle}}",
+        water_labels = "\luaescapestring{\pgfkeysvalueof{/pourbaix/waterlabels}}",
+        water_label_style = "\luaescapestring{\unexpanded\expandafter{\pbxWaterLabelStyle}}",
+        water_label_offset = "\luaescapestring{\pgfkeysvalueof{/pourbaix/waterlabeloffset}}",
+        water_label_pH_low = "\luaescapestring{\pgfkeysvalueof{/pourbaix/waterlabelpHlow}}",
+        water_label_pH_high = "\luaescapestring{\pgfkeysvalueof{/pourbaix/waterlabelpHhigh}}",
+        water_lower_oxidant_label = "\luaescapestring{\unexpanded\expandafter{\pbxWaterLowerOxidantLabel}}",
+        water_lower_reductant_label = "\luaescapestring{\unexpanded\expandafter{\pbxWaterLowerReductantLabel}}",
+        water_upper_oxidant_label = "\luaescapestring{\unexpanded\expandafter{\pbxWaterUpperOxidantLabel}}",
+        water_upper_reductant_label = "\luaescapestring{\unexpanded\expandafter{\pbxWaterUpperReductantLabel}}"
+      })
+    }
+  }
+
+\NewDocumentCommand { \pourbaixGetSlope } { O{} m }
+  { \directlua{tex.sprint(require("pourbaix").tex_get_value("\luaescapestring{#1}","\luaescapestring{#2}","slope"))} }
+\NewDocumentCommand { \pourbaixGetYIntercept } { O{} m }
+  { \directlua{tex.sprint(require("pourbaix").tex_get_value("\luaescapestring{#1}","\luaescapestring{#2}","intercept"))} }
+\NewDocumentCommand { \pourbaixGetYIntersept } { O{} m }
+  { \pourbaixGetYIntercept[#1]{#2} }
+\NewDocumentCommand { \pourbaixGetpH } { O{} m }
+  { \directlua{tex.sprint(require("pourbaix").tex_get_value("\luaescapestring{#1}","\luaescapestring{#2}","pH"))} }
+\NewDocumentCommand { \pourbaixGetPH } { O{} m }
+  { \pourbaixGetpH[#1]{#2} }
+\NewDocumentCommand { \pourbaixGetEquation } { O{} m O{6} }
+  { \directlua{tex.sprint(require("pourbaix").tex_get_equation("\luaescapestring{#1}","\luaescapestring{#2}","\luaescapestring{#3}"))} }
+\ExplSyntaxOff
